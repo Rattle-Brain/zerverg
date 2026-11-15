@@ -52,11 +52,6 @@ pub const Item = struct {
     content_type: []const u8,
 };
 
-pub const File = struct {
-    data: []const u8,
-    content_type: []const u8,
-};
-
 const dir_name = "media";
 
 pub fn mediaTypeOf(name: []const u8) ?MediaType {
@@ -87,21 +82,33 @@ pub fn list(store: *Store, arena: Allocator) ![]Item {
     return out.items;
 }
 
-pub fn read(store: *Store, arena: Allocator, name: []const u8) !File {
+pub const Opened = struct {
+    file: std.Io.File,
+    size: u64,
+    content_type: []const u8,
+};
+
+/// Opens a media file for streaming. The caller closes `file`.
+/// POSIX keeps the handle valid even if the file is replaced or
+/// deleted meanwhile, so the lock is only held while opening.
+pub fn open(store: *Store, name: []const u8) !Opened {
     try names.validateFileName(name);
     const media_type = mediaTypeOf(name) orelse return error.NotFound;
     store.lockShared();
     defer store.unlockShared();
     var dir = try store.openSubdir(dir_name);
     defer dir.close(store.io);
-
-    const limit = limitFor(store.limits, media_type.category);
-    const data = files.readAll(arena, store.io, dir, name, limit) catch |err|
-        switch (err) {
-            error.FileNotFound => return error.NotFound,
-            else => return err,
-        };
-    return .{ .data = data, .content_type = media_type.content_type };
+    const file = dir.openFile(store.io, name, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.NotFound,
+        else => return err,
+    };
+    errdefer file.close(store.io);
+    const stat = try file.stat(store.io);
+    return .{
+        .file = file,
+        .size = stat.size,
+        .content_type = media_type.content_type,
+    };
 }
 
 pub fn put(

@@ -3,7 +3,7 @@
 .{
     .listen_address = "0.0.0.0",
     .http_port = 7080,
-    .https_port = 7443, // TLS lands in a later milestone
+    .https_port = 7443, // native TLS lands in a later milestone
     .data_dir = "/var/lib/zerverg",
 
     .admin_user = "admin",
@@ -15,11 +15,30 @@
     .login_max_failures = 5,
     .login_lockout_s = 900,
 
-    .max_connections = 256,
-    .connection_timeout_s = 60,
-    .max_text_upload_bytes = 2097152, // posts, layouts, styles, snippets
-    .max_image_bytes = 10485760,
-    .max_video_bytes = 67108864,
+    // Body sizes. max_body_bytes is the hard ceiling: the per-type
+    // limits must not exceed it.
+    .max_body_bytes = 134217728, // 128 MiB
+    .max_text_upload_bytes = 4194304, // posts, layouts, styles, snippets
+    .max_image_bytes = 20971520,
+    .max_video_bytes = 134217728,
     .max_media_total_bytes = 2147483648,
     .history_keep = 10, // versions kept per layout/style/snippet
+
+    // Connection and request limits. Behind a reverse proxy every
+    // client shares the proxy's IP: raise the per-IP values or set
+    // rate_limit_per_s = 0.
+    .max_connections = 256,
+    .max_connections_per_ip = 16,
+    .max_requests_per_connection = 1000,
+    .connection_timeout_s = 60,
+    .rate_limit_per_s = 20,
+    .rate_limit_burst = 120,
+
+    // Set to true when the site is reached over HTTPS (e.g. through a
+    // TLS-terminating proxy): enables HSTS and Secure cookies.
+    .https = false,
+
+    // Content-Security-Policy for public pages. The default only
+    // allows scripts from this site (snippets).
+    // .public_csp = "default-src 'self'; ...",
 }

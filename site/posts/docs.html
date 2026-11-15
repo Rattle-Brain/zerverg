@@ -1,0 +1,264 @@
+<!doctype html>
+<html>
+<head>
+<title>docs</title>
+<meta name="zerverg:kind" content="page">
+</head>
+<body>
+
+<h1>docs</h1>
+
+<p>Everything you need to run and shape a zerverg site. For the HTTP
+interface see the <a href="/api">api reference</a>.</p>
+
+<ul>
+  <li><a href="#setup">setup</a></li>
+  <li><a href="#concepts">concepts</a></li>
+  <li><a href="#content">content: posts and pages</a></li>
+  <li><a href="#layouts">layouts (xml)</a></li>
+  <li><a href="#styles">styles (css)</a></li>
+  <li><a href="#snippets">snippets (js)</a></li>
+  <li><a href="#media">media</a></li>
+  <li><a href="#versions">versions and rollback</a></li>
+  <li><a href="#config">configuration</a></li>
+  <li><a href="#hardening">hardening</a></li>
+</ul>
+
+<h2 id="setup">setup</h2>
+
+<p>Build and start a throwaway development instance (no authentication,
+listens on 127.0.0.1 only):</p>
+
+<pre><code><span class="prompt"></span>zig build
+<span class="prompt"></span>./zig-out/bin/zerverg serve --dev --data ./site</code></pre>
+
+<p>For a real deployment, hash a password and put it in the config file
+(or the <code>ZERVERG_ADMIN_PASSWORD_HASH</code> environment variable):</p>
+
+<pre><code><span class="prompt"></span>printf '%s\n' 'my password' | zerverg hash-password
+$argon2id$v=19$m=19456,t=2,p=1$...
+<span class="prompt"></span>sudo cp deploy/zerverg.example.zon /etc/zerverg/zerverg.zon
+<span class="prompt"></span>zerverg serve</code></pre>
+
+<p>On first start, zerverg seeds the data directory with this default
+site. Delete or replace any of it; it is never re-created once
+<code>site.json</code> exists.</p>
+
+<h2 id="concepts">concepts</h2>
+
+<table>
+  <thead><tr><th>piece</th><th>format</th><th>role</th></tr></thead>
+  <tbody>
+    <tr><td>layout</td><td>XML</td><td>which components appear and
+      where</td></tr>
+    <tr><td>style</td><td>CSS</td><td>how they look</td></tr>
+    <tr><td>entry</td><td>HTML</td><td>a post (dated, listed) or a page
+      (standalone)</td></tr>
+    <tr><td>snippet</td><td>JS</td><td>behaviour, loaded on every
+      page</td></tr>
+    <tr><td>media</td><td>images, video</td><td>files referenced from
+      content</td></tr>
+  </tbody>
+</table>
+
+<p>There is no database: all of it lives under the data directory
+(default <code>/var/lib/zerverg</code>):</p>
+
+<pre><code>layouts/&lt;name&gt;/&lt;version&gt;.xml + HEAD
+styles/&lt;name&gt;/&lt;version&gt;.css  + HEAD
+snippets/&lt;name&gt;/&lt;version&gt;.js + HEAD
+posts/&lt;slug&gt;.html
+media/&lt;file&gt;
+site.json        title + active layout, style, snippets</code></pre>
+
+<p>Back it up with <code>tar</code>. Version it with <code>git</code>.</p>
+
+<h2 id="content">content: posts and pages</h2>
+
+<p>An entry is an HTML file. Only the <code>&lt;body&gt;</code> is
+rendered; metadata travels in <code>&lt;meta&gt;</code> tags:</p>
+
+<pre><code>&lt;title&gt;My post&lt;/title&gt;
+&lt;meta name="zerverg:date"   content="2026-11-15"&gt;
+&lt;meta name="zerverg:kind"   content="post"&gt;     &lt;!-- post | page --&gt;
+&lt;meta name="zerverg:tags"   content="zig,web"&gt;
+&lt;meta name="zerverg:layout" content="wide"&gt;     &lt;!-- optional --&gt;
+&lt;meta name="zerverg:slug"   content="my-post"&gt;  &lt;!-- for POST --&gt;</code></pre>
+
+<ul>
+  <li><strong>posts</strong> show a title header, appear in lists and
+    feeds of recent posts.</li>
+  <li><strong>pages</strong> render as-is and appear in the navigation
+    via <code>&lt;page-links/&gt;</code>.</li>
+  <li>The page with slug <code>index</code> is the home page. Without
+    one, <code>/</code> lists all posts.</li>
+  <li>A page may use a different layout with
+    <code>zerverg:layout</code>; the global style still applies.</li>
+</ul>
+
+<p>Embed a list of entries anywhere in a page:</p>
+
+<pre><code>&lt;zv-entries kind="post" tag="zig" limit="10"&gt;&lt;/zv-entries&gt;</code></pre>
+
+<p>Slugs are lowercase letters, digits, <code>-</code> and
+<code>_</code>, up to 64 characters.</p>
+
+<h2 id="layouts">layouts (xml)</h2>
+
+<p>A layout is a small XML file. The root is <code>&lt;layout&gt;</code>
+and exactly one <code>&lt;main/&gt;</code> marks where content goes.
+Layouts are validated on upload: unknown elements, attributes or
+<code>javascript:</code> links are rejected.</p>
+
+<pre><code>&lt;layout kind="sidebar-right" favicon="media:icon.svg" lang="en"&gt;
+  &lt;header&gt;
+    &lt;logo src="media:me.png" alt="me" size="48"/&gt;
+    &lt;site-title/&gt;
+    &lt;tagline&gt;notes from the terminal&lt;/tagline&gt;
+    &lt;nav&gt;&lt;link href="/"&gt;home&lt;/link&gt;&lt;page-links/&gt;&lt;/nav&gt;
+  &lt;/header&gt;
+  &lt;main/&gt;
+  &lt;sidebar&gt;
+    &lt;section title="search"&gt;&lt;search/&gt;&lt;/section&gt;
+    &lt;section title="recent"&gt;&lt;recent-posts count="5"/&gt;&lt;/section&gt;
+  &lt;/sidebar&gt;
+  &lt;footer&gt;&lt;text&gt;(c) me&lt;/text&gt;&lt;/footer&gt;
+&lt;/layout&gt;</code></pre>
+
+<table>
+  <thead><tr><th>element</th><th>attributes</th><th>renders as</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>layout</code></td><td>kind, favicon, lang</td>
+      <td><code>body.zv-kind-*</code></td></tr>
+    <tr><td><code>header</code></td><td></td>
+      <td><code>header.zv-header</code></td></tr>
+    <tr><td><code>sidebar</code></td><td></td>
+      <td><code>aside.zv-sidebar</code></td></tr>
+    <tr><td><code>footer</code></td><td></td>
+      <td><code>footer.zv-footer</code></td></tr>
+    <tr><td><code>section</code></td><td>title</td>
+      <td><code>section.zv-section</code></td></tr>
+    <tr><td><code>main</code></td><td></td>
+      <td><code>main.zv-main</code> (the content)</td></tr>
+    <tr><td><code>nav</code></td><td></td>
+      <td><code>nav.zv-nav</code>; holds link, page-links</td></tr>
+    <tr><td><code>link</code></td><td>href</td>
+      <td><code>a.zv-link</code></td></tr>
+    <tr><td><code>page-links</code></td><td></td>
+      <td>a link to every page</td></tr>
+    <tr><td><code>logo</code></td><td>src, alt, size</td>
+      <td><code>a.zv-logo &gt; img</code></td></tr>
+    <tr><td><code>site-title</code></td><td></td>
+      <td><code>a.zv-site-title</code></td></tr>
+    <tr><td><code>tagline</code></td><td></td>
+      <td><code>p.zv-tagline</code></td></tr>
+    <tr><td><code>text</code></td><td></td>
+      <td><code>p.zv-text</code> (escaped)</td></tr>
+    <tr><td><code>search</code></td><td>placeholder</td>
+      <td><code>form.zv-search</code></td></tr>
+    <tr><td><code>recent-posts</code></td><td>count (1-50)</td>
+      <td><code>ul.zv-recent</code></td></tr>
+    <tr><td><code>raw</code></td><td></td>
+      <td>its text, unescaped, as HTML</td></tr>
+  </tbody>
+</table>
+
+<p>URLs may be site paths (<code>/x</code>), anchors, <code>http(s)://</code>,
+<code>mailto:</code> or <code>media:file</code>.</p>
+
+<h2 id="styles">styles (css)</h2>
+
+<p>The active stylesheet is served as <code>/assets/style.css</code>.
+Target the <code>zv-*</code> classes from the table above. The default
+theme defines its palette as CSS variables at the top; copy it and change
+a handful of lines for a new look.</p>
+
+<pre><code>:root { --bg: #1c1e21; --fg: #c5c8c6; --accent: #9ec29a; }</code></pre>
+
+<h2 id="snippets">snippets (js)</h2>
+
+<p>Snippets are plain JavaScript files, loaded with <code>defer</code>
+on every page in the order listed in <code>site.json</code>. Inline
+<code>&lt;script&gt;</code> in content is blocked by the
+Content-Security-Policy, so behaviour belongs in snippets. The default
+<code>terminal</code> snippet adds the blinking cursor, copy buttons and
+the <kbd>/</kbd> search shortcut.</p>
+
+<p class="note">Snippets run with the full power of the page. Only
+enable code you wrote or have read.</p>
+
+<h2 id="media">media</h2>
+
+<p>Upload images (png, jpg, gif, webp, avif, svg, ico) and videos (mp4,
+webm, ogv) and reference them as <code>media:name.ext</code>:</p>
+
+<pre><code>&lt;img src="media:cat.png" alt="a cat"&gt;</code></pre>
+
+<p>Uploads are checked against their file signature, capped per type and
+by a total quota. SVGs containing scripts are rejected.</p>
+
+<h2 id="versions">versions and rollback</h2>
+
+<p>Every upload of a layout, style or snippet with an existing name
+creates a new version and makes it current. The last
+<code>history_keep</code> versions are kept:</p>
+
+<pre><code><span class="prompt"></span>curl -u admin:pw http://localhost:7080/api/v1/styles/default/versions
+[1,2,3]
+<span class="prompt"></span>curl -u admin:pw -X POST \
+     "http://localhost:7080/api/v1/styles/default/rollback?version=2"</code></pre>
+
+<h2 id="config">configuration</h2>
+
+<p>Defaults, then <code>/etc/zerverg/zerverg.zon</code>, then environment,
+then command-line flags. See <code>deploy/zerverg.example.zon</code>.</p>
+
+<table>
+  <thead><tr><th>key</th><th>default</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>listen_address</td><td>0.0.0.0</td><td>env ZERVERG_LISTEN</td></tr>
+    <tr><td>http_port</td><td>7080</td><td></td></tr>
+    <tr><td>data_dir</td><td>/var/lib/zerverg</td><td>env ZERVERG_DATA_DIR</td></tr>
+    <tr><td>admin_user</td><td>admin</td><td>env ZERVERG_ADMIN_USER</td></tr>
+    <tr><td>admin_password_hash</td><td>(required)</td>
+      <td>env ZERVERG_ADMIN_PASSWORD_HASH</td></tr>
+    <tr><td>max_body_bytes</td><td>128 MiB</td><td>hard request cap</td></tr>
+    <tr><td>max_text_upload_bytes</td><td>4 MiB</td><td>html, xml, css, js</td></tr>
+    <tr><td>max_image_bytes</td><td>20 MiB</td><td></td></tr>
+    <tr><td>max_video_bytes</td><td>128 MiB</td><td></td></tr>
+    <tr><td>max_media_total_bytes</td><td>2 GiB</td><td>media quota</td></tr>
+    <tr><td>history_keep</td><td>10</td><td>versions per item</td></tr>
+  </tbody>
+</table>
+
+<h2 id="hardening">hardening</h2>
+
+<p>On by default, tunable in the config file:</p>
+
+<ul>
+  <li><strong>login lockout</strong>: 5 failures lock an IP out for 15
+    minutes (<code>login_max_failures</code>,
+    <code>login_lockout_s</code>).</li>
+  <li><strong>rate limit</strong>: 20 requests/s per IP, bursts of 120
+    (<code>rate_limit_per_s</code>, <code>rate_limit_burst</code>;
+    0 disables).</li>
+  <li><strong>connections</strong>: 256 total, 16 per IP, 60 s lifetime,
+    1000 requests each.</li>
+  <li><strong>bodies</strong>: only read after authentication, capped per
+    route; public routes accept none.</li>
+  <li><strong>uploads</strong>: text must be UTF-8, layouts must
+    validate, media must match its signature.</li>
+  <li><strong>headers</strong>: CSP (<code>public_csp</code>),
+    nosniff, frame denial, strict referrer, permissions and
+    cross-origin policies on every response.</li>
+  <li><strong>sessions</strong>: random 256-bit tokens, stored hashed,
+    <code>HttpOnly</code>, <code>SameSite=Strict</code>, scoped to
+    <code>/api</code>; writes need <code>X-Requested-With</code>.</li>
+</ul>
+
+<p class="note">Behind a reverse proxy every client shares the proxy's
+IP. Raise or disable the per-IP limits in that case.</p>
+
+</body>
+</html>

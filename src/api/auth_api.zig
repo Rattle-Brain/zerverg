@@ -29,8 +29,13 @@ pub fn login(ctx: *Context) !Response {
     var response = try Response.json(ctx.arena, .ok, .{ .ok = true });
     response.set_cookie = try std.fmt.allocPrint(
         ctx.arena,
-        "{s}={s}; Path=/api; HttpOnly; SameSite=Strict; Max-Age={d}",
-        .{ guard.session_cookie, &token, app.config.session_ttl_s },
+        "{s}={s}; Path=/api; HttpOnly; SameSite=Strict; Max-Age={d}{s}",
+        .{
+            guard.session_cookie,
+            &token,
+            app.config.session_ttl_s,
+            if (app.config.https) "; Secure" else "",
+        },
     );
     return response;
 }

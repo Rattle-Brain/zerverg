@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+<title>api</title>
+<meta name="zerverg:kind" content="page">
+</head>
+<body>
+
+<h1>api</h1>
+
+<p>Everything the admin can do goes through a small REST API under
+<code>/api/v1</code>. The admin web UI uses the same endpoints.</p>
+
+<h2>authentication</h2>
+
+<p>Two ways in:</p>
+
+<ul>
+  <li><strong>HTTP Basic</strong> on every request. Simplest for scripts.</li>
+  <li><strong>Session cookie</strong> from <code>POST /auth/login</code>.
+    Used by the web UI. Requests that change anything must also send
+    <code>X-Requested-With: zerverg</code> (CSRF protection).</li>
+</ul>
+
+<pre><code><span class="prompt"></span>curl -u admin:secret http://localhost:7080/api/v1/posts
+
+<span class="prompt"></span>curl -c jar -H 'X-Requested-With: zerverg' \
+     -d '{"username":"admin","password":"secret"}' \
+     http://localhost:7080/api/v1/auth/login</code></pre>
+
+<p>In <code>--dev</code> mode authentication is disabled.</p>
+
+<h2>endpoints</h2>
+
+<table>
+  <thead><tr><th>method</th><th>path</th><th>body / notes</th></tr></thead>
+  <tbody>
+    <tr><td>POST</td><td>/auth/login</td>
+      <td>JSON <code>{"username","password"}</code></td></tr>
+    <tr><td>POST</td><td>/auth/logout</td><td></td></tr>
+    <tr><td>GET</td><td>/auth/session</td><td>public</td></tr>
+
+    <tr><td>GET</td><td>/posts</td><td>list with metadata</td></tr>
+    <tr><td>POST</td><td>/posts</td><td>HTML; slug from
+      <code>zerverg:slug</code></td></tr>
+    <tr><td>GET</td><td>/posts/:slug</td><td>raw HTML</td></tr>
+    <tr><td>PUT</td><td>/posts/:slug</td><td>HTML; create or replace</td></tr>
+    <tr><td>DELETE</td><td>/posts/:slug</td><td></td></tr>
+
+    <tr><td>GET</td><td>/media</td><td>list with sizes</td></tr>
+    <tr><td>PUT</td><td>/media/:file</td><td>raw bytes</td></tr>
+    <tr><td>DELETE</td><td>/media/:file</td><td></td></tr>
+
+    <tr><td>GET</td><td>/site</td><td>settings</td></tr>
+    <tr><td>PUT</td><td>/site</td><td>JSON, see below</td></tr>
+
+    <tr><td>GET</td><td>/{kind}</td><td>list with current version</td></tr>
+    <tr><td>GET</td><td>/{kind}/:name</td>
+      <td>content; <code>?version=N</code> for an old one</td></tr>
+    <tr><td>PUT</td><td>/{kind}/:name</td><td>new version</td></tr>
+    <tr><td>DELETE</td><td>/{kind}/:name</td><td>with all versions</td></tr>
+    <tr><td>GET</td><td>/{kind}/:name/versions</td><td>e.g.
+      <code>[3,4,5]</code></td></tr>
+    <tr><td>POST</td><td>/{kind}/:name/rollback</td>
+      <td><code>?version=N</code></td></tr>
+  </tbody>
+</table>
+
+<p><code>{kind}</code> is <code>layouts</code>, <code>styles</code> or
+<code>snippets</code>.</p>
+
+<h2>site settings</h2>
+
+<pre><code><span class="prompt"></span>curl -u admin:secret -X PUT http://localhost:7080/api/v1/site -d '{
+  "title": "my site",
+  "active_layout": "default",
+  "active_style": "default",
+  "enabled_snippets": ["terminal"]
+}'</code></pre>
+
+<h2>examples</h2>
+
+<pre><code># publish a post
+<span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @post.html \
+     http://localhost:7080/api/v1/posts/hello-again
+
+# upload a stylesheet and switch to it
+<span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @light.css \
+     http://localhost:7080/api/v1/styles/light
+
+# upload an image
+<span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @cat.png \
+     http://localhost:7080/api/v1/media/cat.png
+
+# undo the last style change
+<span class="prompt"></span>curl -u admin:secret -X POST \
+     "http://localhost:7080/api/v1/styles/light/rollback?version=1"</code></pre>
+
+<h2>errors</h2>
+
+<p>Errors are JSON: <code>{"error":"InvalidName"}</code>.</p>
+
+<table>
+  <thead><tr><th>status</th><th>meaning</th></tr></thead>
+  <tbody>
+    <tr><td>400</td><td>bad name, metadata, JSON, layout or content</td></tr>
+    <tr><td>401</td><td>not authenticated</td></tr>
+    <tr><td>403</td><td>missing <code>X-Requested-With</code></td></tr>
+    <tr><td>404</td><td>no such item or version</td></tr>
+    <tr><td>413</td><td>body larger than the limit</td></tr>
+    <tr><td>414</td><td>URL too long</td></tr>
+    <tr><td>415</td><td>media type not allowed or not matching</td></tr>
+    <tr><td>429</td><td>rate limited or login locked out</td></tr>
+    <tr><td>507</td><td>media quota exhausted</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>

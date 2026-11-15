@@ -10,6 +10,7 @@ const Request = @import("http/Request.zig");
 const Response = @import("http/Response.zig");
 const router = @import("http/router.zig");
 const errors = @import("http/errors.zig");
+const Config = @import("config.zig").Config;
 const guard = @import("auth/guard.zig");
 const library = @import("store/library.zig");
 
@@ -21,9 +22,10 @@ const library_api = @import("api/library_api.zig");
 const site = @import("site/handlers.zig");
 
 const Route = router.Route(Context.Handler);
+const BodyLimit = router.BodyLimit;
 
-/// Applied to every /api and /admin response.
-const admin_csp = "default-src 'self'; frame-ancestors 'none'";
+/// JSON bodies (login, site settings).
+const small_body_bytes = 16 * 1024;
 
 const routes = api_routes ++
     libraryRoutes(.layouts) ++
@@ -32,22 +34,22 @@ const routes = api_routes ++
     public_routes;
 
 const api_routes = [_]Route{
-    public(.POST, "/api/v1/auth/login", auth_api.login),
+    route(.public, .POST, "/api/v1/auth/login", auth_api.login, .small),
     admin(.POST, "/api/v1/auth/logout", auth_api.logout),
     public(.GET, "/api/v1/auth/session", auth_api.session),
 
     admin(.GET, "/api/v1/posts", posts_api.list),
-    admin(.POST, "/api/v1/posts", posts_api.create),
+    route(.admin, .POST, "/api/v1/posts", posts_api.create, .text),
     admin(.GET, "/api/v1/posts/:slug", posts_api.get),
-    admin(.PUT, "/api/v1/posts/:slug", posts_api.put),
+    route(.admin, .PUT, "/api/v1/posts/:slug", posts_api.put, .text),
     admin(.DELETE, "/api/v1/posts/:slug", posts_api.remove),
 
     admin(.GET, "/api/v1/media", media_api.list),
-    admin(.PUT, "/api/v1/media/:name", media_api.put),
+    route(.admin, .PUT, "/api/v1/media/:name", media_api.put, .media),
     admin(.DELETE, "/api/v1/media/:name", media_api.remove),
 
     admin(.GET, "/api/v1/site", site_api.get),
-    admin(.PUT, "/api/v1/site", site_api.put),
+    route(.admin, .PUT, "/api/v1/site", site_api.put, .small),
 };
 
 /// Order matters: `/:slug` must stay last.
@@ -57,6 +59,7 @@ const public_routes = [_]Route{
     public(.GET, "/assets/style.css", site.style),
     public(.GET, "/assets/snippets/:file", site.snippet),
     public(.GET, "/media/:name", site.mediaFile),
+    public(.GET, "/search", site.search),
     public(.GET, "/:slug", site.entry),
 };
 
@@ -66,10 +69,26 @@ fn libraryRoutes(comptime kind: library.Kind) [6]Route {
     return .{
         admin(.GET, base, H.list),
         admin(.GET, base ++ "/:name", H.get),
-        admin(.PUT, base ++ "/:name", H.put),
+        route(.admin, .PUT, base ++ "/:name", H.put, .text),
         admin(.DELETE, base ++ "/:name", H.remove),
         admin(.GET, base ++ "/:name/versions", H.versions),
         admin(.POST, base ++ "/:name/rollback", H.rollback),
+    };
+}
+
+fn route(
+    access: router.Access,
+    method: std.http.Method,
+    pattern: []const u8,
+    handler: Context.Handler,
+    body: BodyLimit,
+) Route {
+    return .{
+        .method = method,
+        .pattern = pattern,
+        .access = access,
+        .handler = handler,
+        .body = body,
     };
 }
 
@@ -78,12 +97,7 @@ fn public(
     pattern: []const u8,
     handler: Context.Handler,
 ) Route {
-    return .{
-        .method = method,
-        .pattern = pattern,
-        .access = .public,
-        .handler = handler,
-    };
+    return route(.public, method, pattern, handler, .none);
 }
 
 fn admin(
@@ -91,38 +105,57 @@ fn admin(
     pattern: []const u8,
     handler: Context.Handler,
 ) Route {
-    return .{
-        .method = method,
-        .pattern = pattern,
-        .access = .admin,
-        .handler = handler,
-    };
+    return route(.admin, method, pattern, handler, .none);
 }
 
 pub fn dispatch(app: *App, arena: Allocator, request: *Request) Response {
-    var response = route(app, arena, request) catch |err|
-        errors.toResponse(arena, err);
-    if (isAdminPath(request.path) and response.csp == null) {
-        response.csp = admin_csp;
+    const found, const result = router.find(Route, &routes, request);
+    const response = switch (result) {
+        .not_found => errors.toResponse(arena, error.NotFound),
+        .wrong_method => errors.toResponse(arena, error.MethodNotAllowed),
+        .matched => invoke(app, arena, request, found.?) catch |err|
+            errors.toResponse(arena, err),
+    };
+    if (result == .matched and found.?.access == .admin and
+        request.isMutating())
+    {
+        audit(request, response);
     }
     return response;
 }
 
-fn route(app: *App, arena: Allocator, request: *Request) !Response {
-    const found, const result = router.find(Route, &routes, request);
-    switch (result) {
-        .not_found => return error.NotFound,
-        .wrong_method => return error.MethodNotAllowed,
-        .matched => {},
-    }
+/// Order matters: authorise first, only then read the body.
+fn invoke(
+    app: *App,
+    arena: Allocator,
+    request: *Request,
+    found: *const Route,
+) !Response {
     try guard.checkCsrf(app, request);
-    if (found.?.access == .admin) try guard.authorize(app, request);
+    if (found.access == .admin) try guard.authorize(app, request);
+    if (found.body != .none) {
+        try request.readBody(arena, bodyLimit(&app.config, found.body));
+    }
     var ctx: Context = .{ .app = app, .request = request, .arena = arena };
-    return found.?.handler(&ctx);
+    return found.handler(&ctx);
 }
 
-fn isAdminPath(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, "/api/") or
-        std.mem.eql(u8, path, "/admin") or
-        std.mem.startsWith(u8, path, "/admin/");
+fn bodyLimit(config: *const Config, limit: BodyLimit) usize {
+    const bytes: usize = switch (limit) {
+        .none => 0,
+        .small => small_body_bytes,
+        .text => config.max_text_upload_bytes,
+        .media => @max(config.max_image_bytes, config.max_video_bytes),
+    };
+    return @min(bytes, config.max_body_bytes);
+}
+
+/// One line per admin change, for the operator's records.
+fn audit(request: *const Request, response: Response) void {
+    std.log.info("audit: {f} {t} {s} -> {d}", .{
+        request.peer,
+        request.method,
+        request.path,
+        @intFromEnum(response.status),
+    });
 }

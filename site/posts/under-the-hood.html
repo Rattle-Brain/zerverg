@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<title>under the hood</title>
+<meta name="zerverg:date" content="2026-11-14">
+<meta name="zerverg:kind" content="post">
+<meta name="zerverg:tags" content="zerverg,internals">
+</head>
+<body>
+
+<p>A short tour of how a request becomes a page.</p>
+
+<h2>1. files, not tables</h2>
+
+<p>Every piece of the site is a file in the data directory. Writes go to
+a temporary file first and are renamed into place, so a reader never
+sees half a stylesheet. A backup is <code>tar czf site.tgz
+/var/lib/zerverg</code>.</p>
+
+<h2>2. a layout is a tree</h2>
+
+<p>The XML layout is parsed by a deliberately tiny parser: no DTDs, no
+external entities, no surprises. It is validated when you upload it,
+then rendered component by component into HTML with <code>zv-*</code>
+classes.</p>
+
+<h2>3. the page is assembled</h2>
+
+<ol>
+  <li>pick the layout: the entry's own, else the site's active one</li>
+  <li>take the <code>&lt;body&gt;</code> of the entry's HTML</li>
+  <li>expand <code>&lt;zv-entries&gt;</code> placeholders</li>
+  <li>rewrite <code>media:</code> references</li>
+  <li>drop it into <code>&lt;main/&gt;</code>, add style and snippets</li>
+</ol>
+
+<h2>4. nothing is lost</h2>
+
+<p>Layouts, styles and snippets keep their last versions. Broke the
+theme at 2am? Roll back with one request.</p>
+
+<hr>
+
+<p>The source is small enough to read in an evening. Start at
+<code>src/main.zig</code>.</p>
+
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<title>hello, world</title>
+<meta name="zerverg:date" content="2026-11-15">
+<meta name="zerverg:kind" content="post">
+<meta name="zerverg:tags" content="zerverg,meta">
+</head>
+<body>
+
+<p>This is the first post on a brand new zerverg site. It was written as
+a plain HTML file and uploaded through the API. That is the whole
+publishing workflow:</p>
+
+<pre><code><span class="prompt"></span>vim hello-world.html
+<span class="prompt"></span>curl -u admin:pw -X PUT --data-binary @hello-world.html \
+     http://localhost:7080/api/v1/posts/hello-world</code></pre>
+
+<p>No editor in the browser, no plugins, no database. Write HTML with
+whatever tool you like, and the site wraps it in the active layout and
+style.</p>
+
+<h2>what the metadata looks like</h2>
+
+<p>The head of this file carries a few <code>zerverg:</code> meta tags:</p>
+
+<pre><code>&lt;title&gt;hello, world&lt;/title&gt;
+&lt;meta name="zerverg:date" content="2026-11-15"&gt;
+&lt;meta name="zerverg:kind" content="post"&gt;
+&lt;meta name="zerverg:tags" content="zerverg,meta"&gt;</code></pre>
+
+<blockquote>Delete this post when you are ready:
+<code>curl -u admin:pw -X DELETE .../api/v1/posts/hello-world</code></blockquote>
+
+<p>Happy hacking. <kbd>/</kbd> searches.</p>
+
+</body>
+</html>

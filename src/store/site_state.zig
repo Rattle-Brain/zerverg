@@ -34,6 +34,17 @@ pub fn read(store: *Store, arena: Allocator) !SiteState {
     return parse(arena, data);
 }
 
+/// Whether settings were ever written (the data dir is initialised).
+pub fn exists(store: *Store) !bool {
+    store.lockShared();
+    defer store.unlockShared();
+    store.root.access(store.io, file_name, .{}) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+    return true;
+}
+
 pub fn parse(arena: Allocator, json: []const u8) !SiteState {
     return std.json.parseFromSliceLeaky(SiteState, arena, json, .{
         .ignore_unknown_fields = true,

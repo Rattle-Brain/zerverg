@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<title>home</title>
+<meta name="zerverg:kind" content="page">
+</head>
+<body>
+
+<div class="hero">
+  <img src="media:zerverg-banner.svg" alt="ZERVERG" width="252" height="48">
+  <p>a small, database-free website engine written in zig.</p>
+</div>
+
+<h1>it works.</h1>
+
+<p>
+  You are looking at a fresh <strong>zerverg</strong> install. Everything
+  on this page &mdash; the layout, the colours, the blinking cursor, this
+  very text &mdash; is a plain file you can replace.
+</p>
+
+<table>
+  <thead><tr><th>file</th><th>decides</th><th>lives in</th></tr></thead>
+  <tbody>
+    <tr><td><code>*.xml</code></td><td>the shape: header, sidebar,
+      nav, footer</td><td><code>layouts/</code></td></tr>
+    <tr><td><code>*.css</code></td><td>the look: colours, fonts,
+      borders</td><td><code>styles/</code></td></tr>
+    <tr><td><code>*.html</code></td><td>the words: posts and
+      pages</td><td><code>posts/</code></td></tr>
+    <tr><td><code>*.js</code></td><td>the behaviour: buttons,
+      widgets</td><td><code>snippets/</code></td></tr>
+  </tbody>
+</table>
+
+<h2>first steps</h2>
+
+<ol>
+  <li>Set an admin password and restart (see <a href="/docs">docs</a>).</li>
+  <li>Upload a post: <code>PUT /api/v1/posts/my-first-post</code>.</li>
+  <li>Replace this page: upload your own <code>index</code> page.</li>
+  <li>Make it yours: upload a stylesheet and activate it.</li>
+</ol>
+
+<pre><code><span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @hello.html \
+     http://localhost:7080/api/v1/posts/hello</code></pre>
+
+<p class="note">Running with <code>--dev</code>? Authentication is off.
+Never expose a dev instance to a network you don't trust.</p>
+
+<h2>latest posts</h2>
+
+<zv-entries kind="post" limit="5"></zv-entries>
+
+<h2>read the manual</h2>
+
+<ul>
+  <li><a href="/docs">docs</a> &mdash; setup, layouts, styles, content,
+    snippets, hardening.</li>
+  <li><a href="/api">api</a> &mdash; every REST endpoint, with curl
+    examples.</li>
+</ul>
+
+</body>
+</html>

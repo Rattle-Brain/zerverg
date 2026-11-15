@@ -9,8 +9,11 @@ const App = @import("App.zig");
 const Store = @import("store/Store.zig");
 const Sessions = @import("auth/Sessions.zig");
 const LoginLimiter = @import("auth/LoginLimiter.zig");
+const ConnectionLimiter = @import("http/ConnectionLimiter.zig");
+const RateLimiter = @import("http/RateLimiter.zig");
 const password = @import("auth/password.zig");
 const server = @import("http/server.zig");
+const seed = @import("defaults/seed.zig");
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -40,6 +43,7 @@ fn runServe(init: std.process.Init, options: cli.ServeOptions) !void {
         .history_keep = config.history_keep,
     });
     defer store.close();
+    try seed.seedIfFresh(&store, init.arena.allocator());
     var sessions = Sessions.init(init.gpa, io, config.session_ttl_s);
     defer sessions.deinit();
     var limiter = LoginLimiter.init(
@@ -49,6 +53,19 @@ fn runServe(init: std.process.Init, options: cli.ServeOptions) !void {
         config.login_lockout_s,
     );
     defer limiter.deinit();
+    var connections = ConnectionLimiter.init(
+        init.gpa,
+        io,
+        config.max_connections_per_ip,
+    );
+    defer connections.deinit();
+    var rate_limiter = RateLimiter.init(
+        init.gpa,
+        io,
+        config.rate_limit_per_s,
+        config.rate_limit_burst,
+    );
+    defer rate_limiter.deinit();
 
     var app: App = .{
         .gpa = init.gpa,
@@ -57,6 +74,8 @@ fn runServe(init: std.process.Init, options: cli.ServeOptions) !void {
         .store = &store,
         .sessions = &sessions,
         .limiter = &limiter,
+        .connections = &connections,
+        .rate_limiter = &rate_limiter,
     };
     std.log.info("data directory: {s}", .{config.data_dir});
     try server.run(&app);
@@ -130,5 +149,14 @@ test {
     _ = @import("auth/password.zig");
     _ = @import("auth/Sessions.zig");
     _ = @import("auth/LoginLimiter.zig");
-    _ = @import("site/render.zig");
+    _ = @import("site/fragments.zig");
+    _ = @import("site/entries_tag.zig");
+    _ = @import("layout/xml.zig");
+    _ = @import("layout/schema.zig");
+    _ = @import("layout/render.zig");
+    _ = @import("content/validate.zig");
+    _ = @import("http/client_key.zig");
+    _ = @import("http/ConnectionLimiter.zig");
+    _ = @import("http/RateLimiter.zig");
+    _ = @import("defaults/seed.zig");
 }

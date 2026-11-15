@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  zerverg default layout.
+
+  The layout decides WHAT goes WHERE. The stylesheet decides how it
+  looks. Upload your own with:
+
+    curl -u admin:pw -X PUT --data-binary @my.xml \
+         http://localhost:7080/api/v1/layouts/my-layout
+
+  kind: single | sidebar-left | sidebar-right
+-->
+<layout kind="sidebar-right" favicon="media:zerverg-logo.svg" lang="en">
+
+  <header>
+    <logo src="media:zerverg-logo.svg" alt="zerverg" size="48"/>
+    <site-title/>
+    <tagline>files in, website out.</tagline>
+    <nav>
+      <link href="/">home</link>
+      <page-links/>
+    </nav>
+  </header>
+
+  <main/>
+
+  <sidebar>
+    <section title="search">
+      <search placeholder="grep the site..."/>
+    </section>
+    <section title="recent">
+      <recent-posts count="5"/>
+    </section>
+    <section title="whoami">
+      <text>A fresh zerverg install. Replace this text by uploading
+        your own layout.</text>
+    </section>
+  </sidebar>
+
+  <footer>
+    <text>powered by zerverg :: no database was harmed</text>
+  </footer>
+
+</layout>

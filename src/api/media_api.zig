@@ -8,6 +8,7 @@
 const Context = @import("../Context.zig");
 const Response = @import("../http/Response.zig");
 const media = @import("../store/media.zig");
+const validate = @import("../content/validate.zig");
 
 pub fn list(ctx: *Context) !Response {
     const items = try media.list(ctx.app.store, ctx.arena);
@@ -16,6 +17,9 @@ pub fn list(ctx: *Context) !Response {
 
 pub fn put(ctx: *Context) !Response {
     const name = ctx.request.param("name");
+    const media_type = media.mediaTypeOf(name) orelse
+        return error.UnsupportedMediaType;
+    try validate.media(media_type, ctx.request.body);
     try media.put(ctx.app.store, ctx.arena, name, ctx.request.body);
     return Response.json(ctx.arena, .created, .{
         .name = name,

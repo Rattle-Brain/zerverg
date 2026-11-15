@@ -8,12 +8,17 @@ const Request = @import("Request.zig");
 
 pub const Access = enum { public, admin };
 
+/// How much request body a route accepts. Mapped to byte limits
+/// from the config by the dispatcher.
+pub const BodyLimit = enum { none, small, text, media };
+
 pub fn Route(comptime Handler: type) type {
     return struct {
         method: http.Method,
         pattern: []const u8,
         access: Access,
         handler: Handler,
+        body: BodyLimit = .none,
     };
 }
 

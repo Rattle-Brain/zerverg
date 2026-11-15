@@ -4,36 +4,27 @@ const std = @import("std");
 
 const Context = @import("../Context.zig");
 const Response = @import("../http/Response.zig");
-const posts = @import("../store/posts.zig");
 const media = @import("../store/media.zig");
 const library = @import("../store/library.zig");
 const site_state = @import("../store/site_state.zig");
-const meta = @import("../content/meta.zig");
-const render = @import("render.zig");
+const pages = @import("pages.zig");
 
 const media_cache = "public, max-age=3600";
 
 pub fn index(ctx: *Context) !Response {
-    const state = try site_state.read(ctx.app.store, ctx.arena);
-    const entries = try posts.list(ctx.app.store, ctx.arena);
-    const body = try render.shell(ctx.arena, .{
-        .site = state,
-        .title = "",
-        .main_html = try render.entryList(ctx.arena, entries),
-    });
-    return Response.html(body);
+    return pages.home(ctx);
 }
 
 pub fn entry(ctx: *Context) !Response {
-    const store = ctx.app.store;
-    const html = try posts.read(store, ctx.arena, ctx.request.param("slug"));
-    const entry_meta = try meta.extract(html);
-    const body = try render.shell(ctx.arena, .{
-        .site = try site_state.read(store, ctx.arena),
-        .title = entry_meta.title,
-        .main_html = meta.bodyOf(html),
-    });
-    return Response.html(body);
+    return pages.entry(ctx, ctx.request.param("slug"));
+}
+
+/// `/search?q=...`; the query is capped at 100 bytes.
+pub fn search(ctx: *Context) !Response {
+    const raw = try ctx.request.decodedQueryParam(ctx.arena, "q") orelse "";
+    const query = std.mem.trim(u8, raw, " ");
+    if (query.len > 100) return error.BadRequest;
+    return pages.search(ctx, query);
 }
 
 pub fn style(ctx: *Context) !Response {
@@ -64,12 +55,13 @@ pub fn snippet(ctx: *Context) !Response {
     };
 }
 
+/// Streams a media file; never loaded into memory whole.
 pub fn mediaFile(ctx: *Context) !Response {
-    const name = ctx.request.param("name");
-    const file = try media.read(ctx.app.store, ctx.arena, name);
+    const opened = try media.open(ctx.app.store, ctx.request.param("name"));
     return .{
-        .content_type = file.content_type,
-        .body = file.data,
+        .content_type = opened.content_type,
+        .file = opened.file,
+        .file_size = opened.size,
         .cache_control = media_cache,
         // Neutralises scripts embedded in SVGs opened directly.
         .csp = "sandbox; default-src 'none'; style-src 'unsafe-inline'",

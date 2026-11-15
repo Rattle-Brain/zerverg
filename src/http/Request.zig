@@ -1,6 +1,9 @@
-//! An HTTP request decoupled from the connection: the parts of the
-//! head we need are copied into the request arena before the body is
-//! read (reading the body invalidates std.http's head strings).
+//! An HTTP request decoupled from the connection.
+//!
+//! The head is copied and validated up front. The body is NOT read
+//! until `readBody` is called, which the dispatcher only does after
+//! the route matched and the client is authorised: anonymous
+//! clients can never make the server buffer a large upload.
 
 const std = @import("std");
 const http = std.http;
@@ -9,10 +12,20 @@ const Allocator = std.mem.Allocator;
 const Request = @This();
 
 pub const max_params = 4;
+pub const max_target_len = 2048;
 
 pub const Param = struct {
     name: []const u8,
     value: []const u8,
+};
+
+pub const BodyState = enum {
+    /// The request declared no body.
+    absent,
+    /// A body was declared and has not been consumed.
+    pending,
+    /// The body was read into `body`.
+    read,
 };
 
 method: http.Method,
@@ -24,29 +37,66 @@ content_type: ?[]const u8 = null,
 requested_with: ?[]const u8 = null,
 peer: std.Io.net.IpAddress,
 body: []const u8 = "",
+body_state: BodyState = .absent,
+raw: ?*http.Server.Request = null,
 params: [max_params]Param = undefined,
 param_count: usize = 0,
 
-pub const ReadError = error{ TooLarge, BadRequest } || Allocator.Error;
+pub const HeadError = error{ BadRequest, UriTooLong } || Allocator.Error;
+pub const BodyError = error{ TooLarge, BadRequest } || Allocator.Error;
 
-/// Copies the head and reads the body (up to `max_body` bytes).
+/// Copies and validates the head. Does not touch the body.
 pub fn fromHttp(
     arena: Allocator,
     raw: *http.Server.Request,
     peer: std.Io.net.IpAddress,
-    max_body: usize,
-) ReadError!Request {
+) HeadError!Request {
+    if (raw.head.target.len > max_target_len) return error.UriTooLong;
     const target = try arena.dupe(u8, raw.head.target);
     const split = std.mem.indexOfScalar(u8, target, '?');
+    const path = if (split) |i| target[0..i] else target;
+    try validatePath(path);
     var request: Request = .{
         .method = raw.head.method,
-        .path = if (split) |i| target[0..i] else target,
+        .path = path,
         .query = if (split) |i| target[i + 1 ..] else "",
         .peer = peer,
+        .raw = raw,
+        .body_state = declaredBody(raw),
     };
     try request.copyHeaders(arena, raw);
-    request.body = try readBody(arena, raw, max_body);
     return request;
+}
+
+/// Rejects paths that are not plain origin-form: control bytes,
+/// backslashes, empty, `.` or `..` segments. One trailing slash is
+/// allowed.
+fn validatePath(path: []const u8) error{BadRequest}!void {
+    if (path.len == 0 or path[0] != '/') return error.BadRequest;
+    for (path) |c| {
+        if (c < 0x20 or c == 0x7f or c == '\\') return error.BadRequest;
+    }
+    if (path.len == 1) return;
+    const end = if (path[path.len - 1] == '/') path.len - 1 else path.len;
+    var segments = std.mem.splitScalar(u8, path[1..end], '/');
+    while (segments.next()) |segment| {
+        const dot = std.mem.eql(u8, segment, ".");
+        const dots = std.mem.eql(u8, segment, "..");
+        if (segment.len == 0 or dot or dots) return error.BadRequest;
+    }
+}
+
+/// RFC 9112 6.3: no Content-Length and no chunked coding means no
+/// body. std.http would otherwise read until the client closes, and
+/// asserts on such requests when responding, so make it explicit.
+fn declaredBody(raw: *http.Server.Request) BodyState {
+    if (!raw.head.method.requestHasBody()) return .absent;
+    if (raw.head.transfer_encoding == .chunked) return .pending;
+    const len = raw.head.content_length orelse {
+        raw.head.content_length = 0;
+        return .absent;
+    };
+    return if (len == 0) .absent else .pending;
 }
 
 fn copyHeaders(
@@ -68,31 +118,29 @@ fn copyHeaders(
     }
 }
 
-fn readBody(
-    arena: Allocator,
-    raw: *http.Server.Request,
-    max_body: usize,
-) ReadError![]const u8 {
-    if (!raw.head.method.requestHasBody()) return "";
-    // RFC 9112 6.3: no Content-Length and no chunked coding means no
-    // body. std.http would otherwise read until the client closes, and
-    // asserts on such requests when responding, so make it explicit.
-    const chunked = raw.head.transfer_encoding == .chunked;
+/// Reads the body, refusing anything over `limit` bytes.
+pub fn readBody(self: *Request, arena: Allocator, limit: usize) BodyError!void {
+    if (self.body_state != .pending) return;
+    const raw = self.raw orelse return;
     if (raw.head.content_length) |len| {
-        if (len > max_body) return error.TooLarge;
-    } else if (!chunked) {
-        raw.head.content_length = 0;
-        return "";
+        if (len > limit) return error.TooLarge;
     }
     var buf: [4096]u8 = undefined;
     const reader = raw.readerExpectContinue(&buf) catch
         return error.BadRequest;
-    return reader.allocRemaining(arena, .limited(max_body + 1)) catch |err|
+    self.body = reader.allocRemaining(arena, .limited(limit + 1)) catch |err|
         switch (err) {
-            error.StreamTooLong => error.TooLarge,
-            error.OutOfMemory => error.OutOfMemory,
-            error.ReadFailed => error.BadRequest,
+            error.StreamTooLong => return error.TooLarge,
+            error.OutOfMemory => return error.OutOfMemory,
+            error.ReadFailed => return error.BadRequest,
         };
+    self.body_state = .read;
+}
+
+/// An unconsumed body leaves the stream mid-request: the connection
+/// must close rather than be reused.
+pub fn canKeepAlive(self: *const Request) bool {
+    return self.body_state != .pending;
 }
 
 /// Named route parameter, set by the router. Asserts it exists.
@@ -111,6 +159,33 @@ pub fn queryParam(self: *const Request, name: []const u8) ?[]const u8 {
         if (std.mem.eql(u8, pair[0..eq], name)) return pair[eq + 1 ..];
     }
     return null;
+}
+
+/// Query parameter value with `+` and `%XX` decoded.
+pub fn decodedQueryParam(
+    self: *const Request,
+    arena: Allocator,
+    name: []const u8,
+) error{ BadRequest, OutOfMemory }!?[]u8 {
+    const raw = self.queryParam(name) orelse return null;
+    const out = try arena.alloc(u8, raw.len);
+    var len: usize = 0;
+    var i: usize = 0;
+    while (i < raw.len) : (len += 1) {
+        switch (raw[i]) {
+            '+' => out[len] = ' ',
+            '%' => {
+                if (i + 2 >= raw.len) return error.BadRequest;
+                out[len] = std.fmt.parseInt(u8, raw[i + 1 .. i + 3], 16) catch
+                    return error.BadRequest;
+                i += 3;
+                continue;
+            },
+            else => |c| out[len] = c,
+        }
+        i += 1;
+    }
+    return out[0..len];
 }
 
 /// Value of cookie `name` from the Cookie header.
@@ -144,6 +219,32 @@ fn testRequest(query: []const u8, cookie: ?[]const u8) Request {
         .cookie = cookie,
         .peer = .{ .ip4 = .loopback(0) },
     };
+}
+
+test "query decoding" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const r = testRequest("q=a+b%2Fc&bad=%4", null);
+    const q = try r.decodedQueryParam(arena, "q");
+    try std.testing.expectEqualStrings("a b/c", q.?);
+    try std.testing.expectError(
+        error.BadRequest,
+        r.decodedQueryParam(arena, "bad"),
+    );
+}
+
+test "path validation" {
+    try validatePath("/");
+    try validatePath("/docs");
+    try validatePath("/api/v1/posts/");
+    const bad = [_][]const u8{
+        "",        "x",    "//",    "/a//b",
+        "/a/../b", "/./a", "/a\\b", "/a\x00",
+    };
+    for (bad) |p| {
+        try std.testing.expectError(error.BadRequest, validatePath(p));
+    }
 }
 
 test "query and cookie lookup" {

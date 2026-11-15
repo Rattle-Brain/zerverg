@@ -14,6 +14,8 @@ const Context = @import("../Context.zig");
 const Response = @import("../http/Response.zig");
 const library = @import("../store/library.zig");
 const common = @import("common.zig");
+const validate = @import("../content/validate.zig");
+const schema = @import("../layout/schema.zig");
 
 pub fn Handlers(comptime kind: library.Kind) type {
     return struct {
@@ -35,6 +37,10 @@ pub fn Handlers(comptime kind: library.Kind) type {
 
         pub fn put(ctx: *Context) !Response {
             const name = ctx.request.param("name");
+            try validate.text(ctx.request.body);
+            if (kind == .layouts) {
+                _ = try schema.parseLayout(ctx.arena, ctx.request.body);
+            }
             const version = try library.upload(
                 ctx.app.store,
                 ctx.arena,
@@ -42,10 +48,8 @@ pub fn Handlers(comptime kind: library.Kind) type {
                 name,
                 ctx.request.body,
             );
-            return Response.json(ctx.arena, .created, .{
-                .name = name,
-                .version = version,
-            });
+            const result = .{ .name = name, .version = version };
+            return Response.json(ctx.arena, .created, result);
         }
 
         pub fn remove(ctx: *Context) !Response {
@@ -68,10 +72,8 @@ pub fn Handlers(comptime kind: library.Kind) type {
             const name = ctx.request.param("name");
             const version = try common.requiredVersion(ctx);
             try library.rollback(ctx.app.store, kind, name, version);
-            return Response.json(ctx.arena, .ok, .{
-                .name = name,
-                .version = version,
-            });
+            const result = .{ .name = name, .version = version };
+            return Response.json(ctx.arena, .ok, result);
         }
     };
 }

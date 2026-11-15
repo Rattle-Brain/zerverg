@@ -6,6 +6,10 @@
 
 const std = @import("std");
 
+const html_scan = @import("html_scan.zig");
+const findTag = html_scan.findTag;
+const attrValue = html_scan.attrValue;
+
 pub const Kind = enum { post, page };
 
 pub const Meta = struct {
@@ -69,51 +73,6 @@ fn titleOf(html: []const u8) ?[]const u8 {
     const close = std.ascii.indexOfIgnoreCase(inner, "</title") orelse
         return null;
     return std.mem.trim(u8, inner[0..close], " \t\r\n");
-}
-
-const Tag = struct { text: []const u8, end: usize };
-
-/// Finds the next tag starting with `prefix` (case-insensitive).
-fn findTag(html: []const u8, prefix: []const u8) ?Tag {
-    var from: usize = 0;
-    while (from < html.len) {
-        const rel = std.ascii.indexOfIgnoreCase(html[from..], prefix) orelse
-            return null;
-        const start = from + rel;
-        const after = start + prefix.len;
-        from = after;
-        if (after < html.len and !isTagBoundary(html[after])) continue;
-        const close = std.mem.indexOfScalarPos(u8, html, after, '>') orelse
-            return null;
-        return .{ .text = html[start..close], .end = close + 1 };
-    }
-    return null;
-}
-
-fn isTagBoundary(c: u8) bool {
-    return c == ' ' or c == '\t' or c == '\n' or c == '\r' or
-        c == '>' or c == '/';
-}
-
-/// Value of a quoted attribute inside a tag's text.
-fn attrValue(tag: []const u8, attr: []const u8) ?[]const u8 {
-    var i: usize = 0;
-    while (std.ascii.indexOfIgnoreCasePos(tag, i, attr)) |pos| {
-        i = pos + attr.len;
-        if (pos == 0 or !isTagBoundary(tag[pos - 1])) continue;
-        var j = i;
-        while (j < tag.len and tag[j] == ' ') j += 1;
-        if (j >= tag.len or tag[j] != '=') continue;
-        j += 1;
-        while (j < tag.len and tag[j] == ' ') j += 1;
-        if (j >= tag.len) return null;
-        const quote = tag[j];
-        if (quote != '"' and quote != '\'') continue;
-        const end = std.mem.indexOfScalarPos(u8, tag, j + 1, quote) orelse
-            return null;
-        return tag[j + 1 .. end];
-    }
-    return null;
 }
 
 fn isIsoDate(s: []const u8) bool {

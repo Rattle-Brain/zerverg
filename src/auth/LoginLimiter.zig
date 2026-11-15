@@ -7,7 +7,9 @@ const Allocator = std.mem.Allocator;
 
 const LoginLimiter = @This();
 
-pub const Key = [16]u8;
+const client_key = @import("../http/client_key.zig");
+
+pub const Key = client_key.Key;
 
 const max_tracked = 4096;
 
@@ -39,14 +41,6 @@ pub fn init(
 
 pub fn deinit(self: *LoginLimiter) void {
     self.entries.deinit(self.gpa);
-}
-
-/// IPv4 addresses map into the IPv4-mapped IPv6 range; ports ignored.
-pub fn keyOf(address: Io.net.IpAddress) Key {
-    return switch (address) {
-        .ip6 => |a| a.bytes,
-        .ip4 => |a| [_]u8{0} ** 10 ++ [_]u8{ 0xff, 0xff } ++ a.bytes,
-    };
 }
 
 pub fn isLocked(self: *LoginLimiter, key: Key) bool {
@@ -107,7 +101,7 @@ test "locks after max failures" {
         60,
     );
     defer limiter.deinit();
-    const key = keyOf(.{ .ip4 = .loopback(0) });
+    const key = client_key.of(.{ .ip4 = .loopback(0) });
     limiter.recordFailure(key);
     limiter.recordFailure(key);
     try std.testing.expect(!limiter.isLocked(key));

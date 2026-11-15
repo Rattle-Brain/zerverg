@@ -7,7 +7,7 @@ const std = @import("std");
 
 const App = @import("../App.zig");
 const Request = @import("../http/Request.zig");
-const LoginLimiter = @import("LoginLimiter.zig");
+const client_key = @import("../http/client_key.zig");
 const password = @import("password.zig");
 
 pub const session_cookie = "zv_session";
@@ -49,7 +49,7 @@ pub fn checkCredentials(
     user: []const u8,
     pass: []const u8,
 ) Error!void {
-    const key = LoginLimiter.keyOf(peer);
+    const key = client_key.of(peer);
     if (app.limiter.isLocked(key)) return error.TooManyAttempts;
     const user_ok = password.constantTimeEql(user, app.config.admin_user);
     // Always verify, so timing does not reveal whether the user exists.

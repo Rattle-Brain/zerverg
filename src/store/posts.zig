@@ -44,8 +44,53 @@ pub fn list(store: *Store, arena: Allocator) ![]Summary {
     return out.items;
 }
 
+/// Newest date first; ties (e.g. undated pages) by slug.
 fn newerFirst(_: void, a: Summary, b: Summary) bool {
-    return std.mem.order(u8, a.meta.date, b.meta.date) == .gt;
+    return switch (std.mem.order(u8, a.meta.date, b.meta.date)) {
+        .gt => true,
+        .lt => false,
+        .eq => std.mem.order(u8, a.slug, b.slug) == .lt,
+    };
+}
+
+/// Entries whose title or visible text contains `query`
+/// (ASCII case-insensitive), newest first.
+pub fn search(
+    store: *Store,
+    arena: Allocator,
+    query: []const u8,
+) ![]Summary {
+    const all = try list(store, arena);
+    var hits: std.ArrayList(Summary) = .empty;
+    for (all) |entry| {
+        if (std.ascii.indexOfIgnoreCase(entry.meta.title, query) != null) {
+            try hits.append(arena, entry);
+            continue;
+        }
+        const html = read(store, arena, entry.slug) catch continue;
+        const visible = try visibleText(arena, meta_mod.bodyOf(html));
+        if (std.ascii.indexOfIgnoreCase(visible, query) != null) {
+            try hits.append(arena, entry);
+        }
+    }
+    return hits.items;
+}
+
+/// Strips tags so searches match words, not markup.
+fn visibleText(arena: Allocator, html: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var in_tag = false;
+    for (html) |c| {
+        if (c == '<') {
+            in_tag = true;
+        } else if (c == '>') {
+            in_tag = false;
+            try out.append(arena, ' ');
+        } else if (!in_tag) {
+            try out.append(arena, c);
+        }
+    }
+    return out.items;
 }
 
 pub fn read(store: *Store, arena: Allocator, slug: []const u8) ![]u8 {

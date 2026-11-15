@@ -12,8 +12,12 @@ body: []const u8 = "",
 cache_control: []const u8 = "no-store",
 set_cookie: ?[]const u8 = null,
 location: ?[]const u8 = null,
-/// Content-Security-Policy; null sends none.
+/// Content-Security-Policy override; null uses the route default.
 csp: ?[]const u8 = null,
+/// When set, the body is streamed from this file instead of `body`.
+/// The server closes it after sending.
+file: ?std.Io.File = null,
+file_size: u64 = 0,
 
 pub fn text(status: http.Status, body: []const u8) Response {
     return .{ .status = status, .body = body };

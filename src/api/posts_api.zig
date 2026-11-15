@@ -9,6 +9,7 @@
 const Context = @import("../Context.zig");
 const Response = @import("../http/Response.zig");
 const posts = @import("../store/posts.zig");
+const validate = @import("../content/validate.zig");
 
 pub fn list(ctx: *Context) !Response {
     const summaries = try posts.list(ctx.app.store, ctx.arena);
@@ -22,12 +23,14 @@ pub fn get(ctx: *Context) !Response {
 }
 
 pub fn create(ctx: *Context) !Response {
+    try validate.text(ctx.request.body);
     const summary = try posts.put(ctx.app.store, null, ctx.request.body);
     return Response.json(ctx.arena, .created, summary);
 }
 
 pub fn put(ctx: *Context) !Response {
     const slug = ctx.request.param("slug");
+    try validate.text(ctx.request.body);
     const summary = try posts.put(ctx.app.store, slug, ctx.request.body);
     return Response.json(ctx.arena, .ok, summary);
 }
