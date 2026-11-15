@@ -14,6 +14,9 @@ const RateLimiter = @import("http/RateLimiter.zig");
 const password = @import("auth/password.zig");
 const server = @import("http/server.zig");
 const seed = @import("defaults/seed.zig");
+const Credentials = @import("auth/Credentials.zig");
+const OAuth = @import("auth/oauth/OAuth.zig");
+const proxy_auth = @import("auth/proxy_auth.zig");
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -44,41 +47,88 @@ fn runServe(init: std.process.Init, options: cli.ServeOptions) !void {
     });
     defer store.close();
     try seed.seedIfFresh(&store, init.arena.allocator());
-    var sessions = Sessions.init(init.gpa, io, config.session_ttl_s);
+    std.log.info("data directory: {s}", .{config.data_dir});
+
+    var credentials = try Credentials.init(
+        init.gpa,
+        io,
+        &store,
+        config.admin_user,
+        config.admin_password_hash,
+    );
+    if (config.auth_method == .password and credentials.mustChange()) {
+        warnDefaultPassword(config);
+    }
+    var oauth = try OAuth.init(
+        init.gpa,
+        io,
+        config.oauth_providers,
+        config.admin_public_url,
+    );
+    defer oauth.deinit();
+    var app: App = .{
+        .gpa = init.gpa,
+        .io = io,
+        .config = config,
+        .store = &store,
+        .credentials = &credentials,
+        .oauth = if (config.auth_method == .oauth) &oauth else null,
+        .trusted_proxies = try proxy_auth.parseTrusted(
+            init.arena.allocator(),
+            config.trusted_proxies,
+        ),
+        .sessions = undefined,
+        .limiter = undefined,
+        .connections = undefined,
+        .rate_limiter = undefined,
+    };
+    try serveWithLimits(&app);
+}
+
+/// Creates the per-client limiters and session store, then serves.
+fn serveWithLimits(app: *App) !void {
+    const gpa = app.gpa;
+    const io = app.io;
+    const config = &app.config;
+    var sessions = Sessions.init(gpa, io, config.session_ttl_s);
     defer sessions.deinit();
     var limiter = LoginLimiter.init(
-        init.gpa,
+        gpa,
         io,
         config.login_max_failures,
         config.login_lockout_s,
     );
     defer limiter.deinit();
     var connections = ConnectionLimiter.init(
-        init.gpa,
+        gpa,
         io,
         config.max_connections_per_ip,
     );
     defer connections.deinit();
     var rate_limiter = RateLimiter.init(
-        init.gpa,
+        gpa,
         io,
         config.rate_limit_per_s,
         config.rate_limit_burst,
     );
     defer rate_limiter.deinit();
 
-    var app: App = .{
-        .gpa = init.gpa,
-        .io = io,
-        .config = config,
-        .store = &store,
-        .sessions = &sessions,
-        .limiter = &limiter,
-        .connections = &connections,
-        .rate_limiter = &rate_limiter,
-    };
-    std.log.info("data directory: {s}", .{config.data_dir});
-    try server.run(&app);
+    app.sessions = &sessions;
+    app.limiter = &limiter;
+    app.connections = &connections;
+    app.rate_limiter = &rate_limiter;
+    try server.run(app);
+}
+
+fn warnDefaultPassword(config: config_mod.Config) void {
+    std.log.warn(
+        \\
+        \\  ************************************************************
+        \\  * DEFAULT CREDENTIALS ACTIVE: admin / admin                *
+        \\  * Log in to the console on port {d:<5} and change them.     *
+        \\  * Until then, the API refuses everything else.             *
+        \\  ************************************************************
+    , .{config.admin_port});
 }
 
 /// Defaults < config file < environment < CLI flags.
@@ -89,13 +139,16 @@ fn loadConfig(
     const arena = init.arena.allocator();
     var config = try config_mod.load(arena, init.io, options.config_path);
     config_mod.applyEnvironment(&config, init.environ_map);
+    try config_mod.resolveOAuthSecrets(arena, &config, init.environ_map);
     if (options.dev) {
         config.dev_mode = true;
         config.listen_address = "127.0.0.1";
+        config.admin_listen_address = "127.0.0.1";
     }
     if (options.listen_address) |v| config.listen_address = v;
     if (options.data_dir) |v| config.data_dir = v;
     if (options.port) |v| config.http_port = v;
+    if (options.admin_port) |v| config.admin_port = v;
     try config_mod.validate(config);
     return config;
 }
@@ -105,7 +158,7 @@ fn warnDevMode() void {
         \\
         \\  ************************************************************
         \\  * DEVELOPMENT MODE: authentication is DISABLED.            *
-        \\  * Anyone who can reach this port can modify the site.      *
+        \\  * Anyone who can reach these ports can modify the site.    *
         \\  * Never expose this instance to a network you don't own.   *
         \\  ************************************************************
     , .{});
@@ -158,5 +211,13 @@ test {
     _ = @import("http/client_key.zig");
     _ = @import("http/ConnectionLimiter.zig");
     _ = @import("http/RateLimiter.zig");
+    _ = @import("auth/Credentials.zig");
+    _ = @import("auth/oauth/jwt.zig");
+    _ = @import("auth/oauth/fetch.zig");
+    _ = @import("auth/oauth/Pending.zig");
+    _ = @import("auth/oauth/oidc.zig");
+    _ = @import("auth/oauth/identity.zig");
+    _ = @import("auth/oauth/OAuth.zig");
+    _ = @import("auth/proxy_auth.zig");
     _ = @import("defaults/seed.zig");
 }

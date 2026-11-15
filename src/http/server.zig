@@ -1,5 +1,8 @@
 //! TCP listener and per-connection HTTP/1.1 loop.
 //!
+//! Two listeners: the public site and the admin console (see
+//! auth/guard.zig for why they are separate origins).
+//!
 //! Defences applied here, before any routing:
 //!   - global and per-client connection caps
 //!   - a per-connection lifetime watchdog (slowloris, idle keep-alive)
@@ -16,6 +19,7 @@ const Response = @import("Response.zig");
 const client_key = @import("client_key.zig");
 const headers = @import("headers.zig");
 const errors = @import("errors.zig");
+const guard = @import("../auth/guard.zig");
 const dispatch = @import("../routes.zig").dispatch;
 
 const recv_buffer_len = 16 * 1024;
@@ -23,46 +27,74 @@ const send_buffer_len = 16 * 1024;
 
 const Counter = std.atomic.Value(u32);
 
+const Listener = struct {
+    surface: guard.Surface,
+    server: Io.net.Server,
+    active: Counter = .init(0),
+};
+
+/// Serves the public site and the admin console until cancelled.
 pub fn run(app: *App) !void {
     const io = app.io;
-    const address = try Io.net.IpAddress.parse(
-        app.config.listen_address,
-        app.config.http_port,
-    );
-    var listener = try address.listen(io, .{ .reuse_address = true });
-    defer listener.deinit(io);
-    std.log.info("listening on http://{f}", .{address});
+    const config = &app.config;
+    var public: Listener = .{
+        .surface = .public,
+        .server = try listen(io, config.listen_address, config.http_port),
+    };
+    defer public.server.deinit(io);
+    var admin: Listener = .{
+        .surface = .admin,
+        .server = try listen(
+            io,
+            config.adminListenAddress(),
+            config.admin_port,
+        ),
+    };
+    defer admin.server.deinit(io);
 
+    var admin_loop = try io.concurrent(acceptLoop, .{ app, &admin });
+    defer admin_loop.cancel(io) catch {};
+    try acceptLoop(app, &public);
+}
+
+fn listen(io: Io, host: []const u8, port: u16) !Io.net.Server {
+    const address = try Io.net.IpAddress.parse(host, port);
+    const server = try address.listen(io, .{ .reuse_address = true });
+    std.log.info("listening on http://{f}", .{address});
+    return server;
+}
+
+fn acceptLoop(app: *App, listener: *Listener) Io.Cancelable!void {
+    const io = app.io;
     var group: Io.Group = .init;
     defer group.cancel(io);
-    var active: Counter = .init(0);
     while (true) {
-        const stream = listener.accept(io) catch |err| {
-            if (err == error.Canceled) return;
+        const stream = listener.server.accept(io) catch |err| {
+            if (err == error.Canceled) return error.Canceled;
             std.log.warn("accept: {t}", .{err});
             continue;
         };
-        spawnConnection(app, &group, &active, stream);
+        spawnConnection(app, &group, listener, stream);
     }
 }
 
 fn spawnConnection(
     app: *App,
     group: *Io.Group,
-    active: *Counter,
+    listener: *Listener,
     stream: Io.net.Stream,
 ) void {
     const io = app.io;
     const key = client_key.of(stream.socket.address);
-    if (active.load(.monotonic) >= app.config.max_connections or
+    if (listener.active.load(.monotonic) >= app.config.max_connections or
         !app.connections.acquire(key))
     {
         stream.close(io);
         return;
     }
-    _ = active.fetchAdd(1, .monotonic);
-    group.concurrent(io, serveConnection, .{ app, stream, active }) catch {
-        _ = active.fetchSub(1, .monotonic);
+    _ = listener.active.fetchAdd(1, .monotonic);
+    group.concurrent(io, serveConnection, .{ app, stream, listener }) catch {
+        _ = listener.active.fetchSub(1, .monotonic);
         app.connections.release(key);
         stream.close(io);
     };
@@ -71,11 +103,11 @@ fn spawnConnection(
 fn serveConnection(
     app: *App,
     stream: Io.net.Stream,
-    active: *Counter,
+    listener: *Listener,
 ) Io.Cancelable!void {
     const io = app.io;
     const peer = stream.socket.address;
-    defer _ = active.fetchSub(1, .monotonic);
+    defer _ = listener.active.fetchSub(1, .monotonic);
     defer app.connections.release(client_key.of(peer));
     defer stream.close(io);
 
@@ -94,8 +126,14 @@ fn serveConnection(
     var served: u32 = 0;
     while (served < max_requests) : (served += 1) {
         var raw = server.receiveHead() catch return;
-        const last = served + 1 == max_requests;
-        if (!handleRequest(app, &raw, peer, last)) return;
+        const exchange: Exchange = .{
+            .app = app,
+            .raw = &raw,
+            .peer = peer,
+            .surface = listener.surface,
+            .last = served + 1 == max_requests,
+        };
+        if (!exchange.handle()) return;
     }
 }
 
@@ -108,68 +146,79 @@ fn shutdownAfter(
     stream.shutdown(io, .both) catch {};
 }
 
-/// Handles one request; returns whether the connection may be reused.
-fn handleRequest(
+/// One request/response on a connection.
+const Exchange = struct {
     app: *App,
     raw: *http.Server.Request,
     peer: Io.net.IpAddress,
+    surface: guard.Surface,
+    /// Last request allowed on this connection.
     last: bool,
-) bool {
-    var arena_state = std.heap.ArenaAllocator.init(app.gpa);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    const path = raw.head.target;
 
-    if (!app.rate_limiter.allow(client_key.of(peer))) {
-        const response = errors.toResponse(arena, error.RateLimited);
-        send(app, arena, raw, path, response, false) catch {};
-        return false;
-    }
-    var request = Request.fromHttp(arena, raw, peer) catch |err| {
-        const response = errors.toResponse(arena, err);
-        send(app, arena, raw, "/", response, false) catch {};
-        return false;
-    };
-    const response = dispatch(app, arena, &request);
-    const keep_alive = !last and raw.head.keep_alive and
-        request.canKeepAlive();
-    send(app, arena, raw, request.path, response, keep_alive) catch
-        return false;
-    return keep_alive;
-}
+    /// Handles the request; returns whether the connection may be
+    /// reused.
+    fn handle(self: Exchange) bool {
+        const app = self.app;
+        var arena_state = std.heap.ArenaAllocator.init(app.gpa);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
 
-fn send(
-    app: *App,
-    arena: std.mem.Allocator,
-    raw: *http.Server.Request,
-    path: []const u8,
-    response: Response,
-    keep_alive: bool,
-) !void {
-    const extra = try headers.build(arena, &app.config, path, response);
-    const options: http.Server.Request.RespondOptions = .{
-        .status = response.status,
-        .keep_alive = keep_alive,
-        .extra_headers = extra,
-    };
-    if (response.file) |file| {
-        defer file.close(app.io);
-        return streamFile(app.io, raw, file, response.file_size, options);
+        if (!app.rate_limiter.allow(client_key.of(self.peer))) {
+            const response = errors.toResponse(arena, error.RateLimited);
+            self.send(arena, "/", response, false) catch {};
+            return false;
+        }
+        var request = Request.fromHttp(arena, self.raw, self.peer) catch |err| {
+            const response = errors.toResponse(arena, err);
+            self.send(arena, "/", response, false) catch {};
+            return false;
+        };
+        const response = dispatch(app, arena, &request, self.surface);
+        const keep_alive = !self.last and self.raw.head.keep_alive and
+            request.canKeepAlive();
+        self.send(arena, request.path, response, keep_alive) catch
+            return false;
+        return keep_alive;
     }
-    try raw.respond(response.body, options);
-}
+
+    fn send(
+        self: Exchange,
+        arena: std.mem.Allocator,
+        path: []const u8,
+        response: Response,
+        keep_alive: bool,
+    ) !void {
+        const extra = try headers.build(
+            arena,
+            &self.app.config,
+            self.surface,
+            path,
+            response,
+        );
+        const options: http.Server.Request.RespondOptions = .{
+            .status = response.status,
+            .keep_alive = keep_alive,
+            .extra_headers = extra,
+        };
+        if (response.file) |file| {
+            defer file.close(self.app.io);
+            return streamFile(self.app.io, self.raw, file, response, options);
+        }
+        try self.raw.respond(response.body, options);
+    }
+};
 
 /// Streams a file body without loading it into memory.
 fn streamFile(
     io: Io,
     raw: *http.Server.Request,
     file: Io.File,
-    size: u64,
+    response: Response,
     options: http.Server.Request.RespondOptions,
 ) !void {
     var body_buffer: [8192]u8 = undefined;
     var body = try raw.respondStreaming(&body_buffer, .{
-        .content_length = size,
+        .content_length = response.file_size,
         .respond_options = options,
     });
     var file_buffer: [16 * 1024]u8 = undefined;

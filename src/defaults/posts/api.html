@@ -13,20 +13,34 @@
 
 <h2>authentication</h2>
 
-<p>Two ways in:</p>
+<p>The API is served on both ports, with different rules:</p>
 
-<ul>
-  <li><strong>HTTP Basic</strong> on every request. Simplest for scripts.</li>
-  <li><strong>Session cookie</strong> from <code>POST /auth/login</code>.
-    Used by the web UI. Requests that change anything must also send
-    <code>X-Requested-With: zerverg</code> (CSRF protection).</li>
-</ul>
+<table>
+  <thead><tr><th>port</th><th>accepts</th></tr></thead>
+  <tbody>
+    <tr><td>9080 (console)</td><td>session cookie from
+      <code>POST /auth/login</code> or a "sign in with ..." login, HTTP
+      Basic, or proxy headers,
+      depending on <code>auth_method</code></td></tr>
+    <tr><td>7080 (site)</td><td>HTTP Basic only, and only with
+      <code>auth_method = .password</code>. Cookies are ignored here, so
+      site snippets cannot use a console session.</td></tr>
+  </tbody>
+</table>
+
+<p>Cookie-authenticated requests that change anything must also send
+<code>X-Requested-With: zerverg</code> (CSRF protection). While the
+factory password is active, every endpoint except the
+<code>/auth/*</code> ones answers <code>403 PasswordChangeRequired</code>.</p>
 
 <pre><code><span class="prompt"></span>curl -u admin:secret http://localhost:7080/api/v1/posts
 
 <span class="prompt"></span>curl -c jar -H 'X-Requested-With: zerverg' \
      -d '{"username":"admin","password":"secret"}' \
-     http://localhost:7080/api/v1/auth/login</code></pre>
+     http://localhost:9080/api/v1/auth/login
+
+<span class="prompt"></span>curl -u admin:admin http://localhost:9080/api/v1/auth/password \
+     -d '{"current_password":"admin","new_password":"something-long"}'</code></pre>
 
 <p>In <code>--dev</code> mode authentication is disabled.</p>
 
@@ -36,9 +50,15 @@
   <thead><tr><th>method</th><th>path</th><th>body / notes</th></tr></thead>
   <tbody>
     <tr><td>POST</td><td>/auth/login</td>
-      <td>JSON <code>{"username","password"}</code></td></tr>
+      <td>JSON <code>{"username","password"}</code>; console port</td></tr>
     <tr><td>POST</td><td>/auth/logout</td><td></td></tr>
-    <tr><td>GET</td><td>/auth/session</td><td>public</td></tr>
+    <tr><td>GET</td><td>/auth/session</td><td>public; who am I</td></tr>
+    <tr><td>POST</td><td>/auth/password</td><td>JSON
+      <code>{"current_password","new_password"}</code></td></tr>
+    <tr><td>GET</td><td>/auth/oauth/:provider/start</td><td>redirects
+      to the provider (browser only)</td></tr>
+    <tr><td>GET</td><td>/auth/oauth/:provider/callback</td><td>the
+      provider redirects back here</td></tr>
 
     <tr><td>GET</td><td>/posts</td><td>list with metadata</td></tr>
     <tr><td>POST</td><td>/posts</td><td>HTML; slug from
@@ -105,7 +125,9 @@
   <tbody>
     <tr><td>400</td><td>bad name, metadata, JSON, layout or content</td></tr>
     <tr><td>401</td><td>not authenticated</td></tr>
-    <tr><td>403</td><td>missing <code>X-Requested-With</code></td></tr>
+    <tr><td>403</td><td>missing <code>X-Requested-With</code>, or
+      <code>PasswordChangeRequired</code></td></tr>
+    <tr><td>409</td><td>password is set in the config file</td></tr>
     <tr><td>404</td><td>no such item or version</td></tr>
     <tr><td>413</td><td>body larger than the limit</td></tr>
     <tr><td>414</td><td>URL too long</td></tr>

@@ -1,5 +1,8 @@
-//! The route table and request dispatch: routing, access control,
+//! The route tables and request dispatch: routing, access control,
 //! CSRF checks and error mapping all happen here, nowhere else.
+//!
+//! Two tables, one per listener: the public site (with a Basic-auth
+//! API for scripts) and the admin console (with the full API).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -15,11 +18,13 @@ const guard = @import("auth/guard.zig");
 const library = @import("store/library.zig");
 
 const auth_api = @import("api/auth_api.zig");
+const oauth_api = @import("api/oauth_api.zig");
 const posts_api = @import("api/posts_api.zig");
 const media_api = @import("api/media_api.zig");
 const site_api = @import("api/site_api.zig");
 const library_api = @import("api/library_api.zig");
 const site = @import("site/handlers.zig");
+const console = @import("console/handlers.zig");
 
 const Route = router.Route(Context.Handler);
 const BodyLimit = router.BodyLimit;
@@ -27,17 +32,36 @@ const BodyLimit = router.BodyLimit;
 /// JSON bodies (login, site settings).
 const small_body_bytes = 16 * 1024;
 
-const routes = api_routes ++
+const shared_api_routes = api_routes ++
     libraryRoutes(.layouts) ++
     libraryRoutes(.styles) ++
-    libraryRoutes(.snippets) ++
-    public_routes;
+    libraryRoutes(.snippets);
+
+const public_table = shared_api_routes ++ public_routes;
+const admin_table = auth_routes ++ shared_api_routes ++ console_routes;
+
+/// Admin surface only. Reachable before the factory password is
+/// changed, so the console can force that change.
+const auth_routes = [_]Route{
+    early(route(.public, .POST, "/api/v1/auth/login", auth_api.login, .small)),
+    early(admin(.POST, "/api/v1/auth/logout", auth_api.logout)),
+    early(public(.GET, "/api/v1/auth/session", auth_api.session)),
+    early(route(
+        .admin,
+        .POST,
+        "/api/v1/auth/password",
+        auth_api.changePassword,
+        .small,
+    )),
+    early(public(.GET, "/api/v1/auth/oauth/:provider/start", oauth_api.start)),
+    early(public(
+        .GET,
+        "/api/v1/auth/oauth/:provider/callback",
+        oauth_api.callback,
+    )),
+};
 
 const api_routes = [_]Route{
-    route(.public, .POST, "/api/v1/auth/login", auth_api.login, .small),
-    admin(.POST, "/api/v1/auth/logout", auth_api.logout),
-    public(.GET, "/api/v1/auth/session", auth_api.session),
-
     admin(.GET, "/api/v1/posts", posts_api.list),
     route(.admin, .POST, "/api/v1/posts", posts_api.create, .text),
     admin(.GET, "/api/v1/posts/:slug", posts_api.get),
@@ -52,10 +76,18 @@ const api_routes = [_]Route{
     route(.admin, .PUT, "/api/v1/site", site_api.put, .small),
 };
 
+/// The console shell is static and holds no data; everything it shows
+/// comes from the authenticated API.
+const console_routes = [_]Route{
+    public(.GET, "/", console.index),
+    public(.GET, "/console.css", console.stylesheet),
+    public(.GET, "/console.js", console.script),
+    public(.GET, "/media/:name", site.mediaFile),
+};
+
 /// Order matters: `/:slug` must stay last.
 const public_routes = [_]Route{
     public(.GET, "/", site.index),
-    public(.GET, "/admin", site.adminPlaceholder),
     public(.GET, "/assets/style.css", site.style),
     public(.GET, "/assets/snippets/:file", site.snippet),
     public(.GET, "/media/:name", site.mediaFile),
@@ -92,6 +124,12 @@ fn route(
     };
 }
 
+fn early(r: Route) Route {
+    var copy = r;
+    copy.before_password_change = true;
+    return copy;
+}
+
 fn public(
     method: std.http.Method,
     pattern: []const u8,
@@ -108,36 +146,58 @@ fn admin(
     return route(.admin, method, pattern, handler, .none);
 }
 
-pub fn dispatch(app: *App, arena: Allocator, request: *Request) Response {
-    const found, const result = router.find(Route, &routes, request);
+pub fn dispatch(
+    app: *App,
+    arena: Allocator,
+    request: *Request,
+    surface: guard.Surface,
+) Response {
+    const table: []const Route = switch (surface) {
+        .public => &public_table,
+        .admin => &admin_table,
+    };
+    const found, const result = router.find(Route, table, request);
+    var ctx: Context = .{
+        .app = app,
+        .request = request,
+        .arena = arena,
+        .surface = surface,
+    };
     const response = switch (result) {
         .not_found => errors.toResponse(arena, error.NotFound),
         .wrong_method => errors.toResponse(arena, error.MethodNotAllowed),
-        .matched => invoke(app, arena, request, found.?) catch |err|
+        .matched => invoke(&ctx, found.?) catch |err|
             errors.toResponse(arena, err),
     };
     if (result == .matched and found.?.access == .admin and
         request.isMutating())
     {
-        audit(request, response);
+        audit(&ctx, response);
     }
     return response;
 }
 
 /// Order matters: authorise first, only then read the body.
-fn invoke(
-    app: *App,
-    arena: Allocator,
-    request: *Request,
-    found: *const Route,
-) !Response {
-    try guard.checkCsrf(app, request);
-    if (found.access == .admin) try guard.authorize(app, request);
-    if (found.body != .none) {
-        try request.readBody(arena, bodyLimit(&app.config, found.body));
+fn invoke(ctx: *Context, found: *const Route) !Response {
+    const app = ctx.app;
+    try guard.checkCsrf(app, ctx.request);
+    if (found.access == .admin) {
+        const principal = try guard.authorize(
+            app,
+            ctx.arena,
+            ctx.request,
+            ctx.surface,
+        );
+        if (principal.must_change and !found.before_password_change) {
+            return error.PasswordChangeRequired;
+        }
+        ctx.principal = principal;
     }
-    var ctx: Context = .{ .app = app, .request = request, .arena = arena };
-    return found.handler(&ctx);
+    if (found.body != .none) {
+        const limit = bodyLimit(&app.config, found.body);
+        try ctx.request.readBody(ctx.arena, limit);
+    }
+    return found.handler(ctx);
 }
 
 fn bodyLimit(config: *const Config, limit: BodyLimit) usize {
@@ -151,11 +211,13 @@ fn bodyLimit(config: *const Config, limit: BodyLimit) usize {
 }
 
 /// One line per admin change, for the operator's records.
-fn audit(request: *const Request, response: Response) void {
-    std.log.info("audit: {f} {t} {s} -> {d}", .{
-        request.peer,
-        request.method,
-        request.path,
+fn audit(ctx: *const Context, response: Response) void {
+    const user = if (ctx.principal) |p| p.name else "-";
+    std.log.info("audit: {f} {s} {t} {s} -> {d}", .{
+        ctx.request.peer,
+        user,
+        ctx.request.method,
+        ctx.request.path,
         @intFromEnum(response.status),
     });
 }

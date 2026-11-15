@@ -7,10 +7,11 @@ const Allocator = std.mem.Allocator;
 
 const Config = @import("../config.zig").Config;
 const Response = @import("Response.zig");
+const Surface = @import("../auth/guard.zig").Surface;
 
-/// For /api and /admin: own origin only, never framed.
-const admin_csp = "default-src 'self'; frame-ancestors 'none'; " ++
-    "base-uri 'none'; form-action 'self'";
+/// Console and API: own origin only, never framed.
+const admin_csp = "default-src 'self'; img-src 'self' data:; " ++
+    "frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 const permissions_policy = "accelerometer=(), camera=(), " ++
     "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), " ++
@@ -28,6 +29,7 @@ const security_headers = [_]http.Header{
 pub fn build(
     arena: Allocator,
     config: *const Config,
+    surface: Surface,
     path: []const u8,
     response: Response,
 ) Allocator.Error![]const http.Header {
@@ -37,7 +39,7 @@ pub fn build(
         .{ .name = "cache-control", .value = response.cache_control },
     });
     try list.appendSlice(arena, &security_headers);
-    const admin = isAdminPath(path);
+    const admin = surface == .admin or isApiPath(path);
     try list.append(arena, .{
         .name = "content-security-policy",
         .value = response.csp orelse
@@ -51,7 +53,7 @@ pub fn build(
         .name = "strict-transport-security",
         .value = "max-age=31536000; includeSubDomains",
     });
-    if (response.set_cookie) |v| {
+    for (response.set_cookies) |v| {
         try list.append(arena, .{ .name = "set-cookie", .value = v });
     }
     if (response.location) |v| {
@@ -60,8 +62,6 @@ pub fn build(
     return list.items;
 }
 
-pub fn isAdminPath(path: []const u8) bool {
-    return std.mem.startsWith(u8, path, "/api/") or
-        std.mem.eql(u8, path, "/admin") or
-        std.mem.startsWith(u8, path, "/admin/");
+fn isApiPath(path: []const u8) bool {
+    return std.mem.startsWith(u8, path, "/api/");
 }

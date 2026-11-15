@@ -10,7 +10,8 @@ status: http.Status = .ok,
 content_type: []const u8 = "text/plain; charset=utf-8",
 body: []const u8 = "",
 cache_control: []const u8 = "no-store",
-set_cookie: ?[]const u8 = null,
+/// Each becomes its own Set-Cookie header.
+set_cookies: []const []const u8 = &.{},
 location: ?[]const u8 = null,
 /// Content-Security-Policy override; null uses the route default.
 csp: ?[]const u8 = null,

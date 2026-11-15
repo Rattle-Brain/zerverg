@@ -8,6 +8,8 @@ const Sessions = @import("auth/Sessions.zig");
 const LoginLimiter = @import("auth/LoginLimiter.zig");
 const ConnectionLimiter = @import("http/ConnectionLimiter.zig");
 const RateLimiter = @import("http/RateLimiter.zig");
+const Credentials = @import("auth/Credentials.zig");
+const OAuth = @import("auth/oauth/OAuth.zig");
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -17,3 +19,8 @@ sessions: *Sessions,
 limiter: *LoginLimiter,
 connections: *ConnectionLimiter,
 rate_limiter: *RateLimiter,
+credentials: *Credentials,
+/// Set when `auth_method == .oauth`.
+oauth: ?*OAuth = null,
+/// Parsed `trusted_proxies`, for `auth_method == .proxy`.
+trusted_proxies: []const std.Io.net.IpAddress = &.{},

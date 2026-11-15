@@ -19,6 +19,8 @@ pub fn Route(comptime Handler: type) type {
         access: Access,
         handler: Handler,
         body: BodyLimit = .none,
+        /// Reachable while the factory password is still active.
+        before_password_change: bool = false,
     };
 }
 

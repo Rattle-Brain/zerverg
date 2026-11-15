@@ -35,6 +35,8 @@ cookie: ?[]const u8 = null,
 authorization: ?[]const u8 = null,
 content_type: ?[]const u8 = null,
 requested_with: ?[]const u8 = null,
+/// Every header, copied; bounded by the 16 KiB head buffer.
+headers: []const http.Header = &.{},
 peer: std.Io.net.IpAddress,
 body: []const u8 = "",
 body_state: BodyState = .absent,
@@ -105,17 +107,31 @@ fn copyHeaders(
     raw: *http.Server.Request,
 ) Allocator.Error!void {
     if (raw.head.content_type) |v| self.content_type = try arena.dupe(u8, v);
+    var list: std.ArrayList(http.Header) = .empty;
     var it = raw.iterateHeaders();
-    while (it.next()) |header| {
-        const value = try arena.dupe(u8, header.value);
-        if (eqlIgnoreCase(header.name, "cookie")) {
-            self.cookie = value;
-        } else if (eqlIgnoreCase(header.name, "authorization")) {
-            self.authorization = value;
-        } else if (eqlIgnoreCase(header.name, "x-requested-with")) {
-            self.requested_with = value;
+    while (it.next()) |h| {
+        const copy: http.Header = .{
+            .name = try arena.dupe(u8, h.name),
+            .value = try arena.dupe(u8, h.value),
+        };
+        try list.append(arena, copy);
+        if (eqlIgnoreCase(copy.name, "cookie")) {
+            self.cookie = copy.value;
+        } else if (eqlIgnoreCase(copy.name, "authorization")) {
+            self.authorization = copy.value;
+        } else if (eqlIgnoreCase(copy.name, "x-requested-with")) {
+            self.requested_with = copy.value;
         }
     }
+    self.headers = list.items;
+}
+
+/// First header named `name` (case-insensitive).
+pub fn header(self: *const Request, name: []const u8) ?[]const u8 {
+    for (self.headers) |h| {
+        if (eqlIgnoreCase(h.name, name)) return h.value;
+    }
+    return null;
 }
 
 /// Reads the body, refusing anything over `limit` bytes.
@@ -190,8 +206,8 @@ pub fn decodedQueryParam(
 
 /// Value of cookie `name` from the Cookie header.
 pub fn cookieValue(self: *const Request, name: []const u8) ?[]const u8 {
-    const header = self.cookie orelse return null;
-    var it = std.mem.splitScalar(u8, header, ';');
+    const cookies = self.cookie orelse return null;
+    var it = std.mem.splitScalar(u8, cookies, ';');
     while (it.next()) |part| {
         const pair = std.mem.trim(u8, part, " ");
         const eq = std.mem.indexOfScalar(u8, pair, '=') orelse continue;

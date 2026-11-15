@@ -12,9 +12,38 @@ pub fn writeAtomic(
     name: []const u8,
     data: []const u8,
 ) !void {
+    return writeAtomicWith(io, dir, name, data, .default_file);
+}
+
+/// Like `writeAtomic`, readable by the owner only (secrets).
+pub fn writeAtomicPrivate(
+    io: Io,
+    dir: Io.Dir,
+    name: []const u8,
+    data: []const u8,
+) !void {
+    const Permissions = Io.File.Permissions;
+    const private: Permissions = if (@hasDecl(Permissions, "fromMode"))
+        .fromMode(0o600)
+    else
+        .default_file;
+    return writeAtomicWith(io, dir, name, data, private);
+}
+
+fn writeAtomicWith(
+    io: Io,
+    dir: Io.Dir,
+    name: []const u8,
+    data: []const u8,
+    permissions: Io.File.Permissions,
+) !void {
     var tmp_buf: [128]u8 = undefined;
     const tmp = try std.fmt.bufPrint(&tmp_buf, ".tmp-{s}", .{name});
-    try dir.writeFile(io, .{ .sub_path = tmp, .data = data });
+    try dir.writeFile(io, .{
+        .sub_path = tmp,
+        .data = data,
+        .flags = .{ .permissions = permissions },
+    });
     errdefer dir.deleteFile(io, tmp) catch {};
     try dir.rename(tmp, dir, name, io);
 }

@@ -2,15 +2,61 @@
 // values below are the defaults unless noted.
 .{
     .listen_address = "0.0.0.0",
-    .http_port = 7080,
+    .http_port = 7080, // the public site
     .https_port = 7443, // native TLS lands in a later milestone
     .data_dir = "/var/lib/zerverg",
 
+    // Admin console. Its own port = its own browser origin, so site
+    // snippets can never use a console session. Keep it off the
+    // internet: forward only the site port. null = listen_address.
+    .admin_listen_address = null,
+    .admin_port = 9080,
+
+    // .password (default), .oauth or .proxy. With .oauth/.proxy
+    // password login is disabled entirely.
+    .auth_method = .password,
     .admin_user = "admin",
-    // REQUIRED outside --dev. Generate with:
+    // Optional. Empty: the password is managed from the console and
+    // starts as "admin" (a change is forced on first login). Set it to
+    // pin the password from config instead:
     //   printf '%s\n' 'your password' | zerverg hash-password
     // or pass it via the ZERVERG_ADMIN_PASSWORD_HASH env variable.
     .admin_password_hash = "",
+
+    // .oauth: "Sign in with Google / GitHub / any OpenID provider".
+    // Register an OAuth app with each provider using the callback
+    //   <admin_public_url>/api/v1/auth/oauth/<name>/callback
+    // allowed_users is REQUIRED: without it anyone with an account at
+    // the provider could log in. Google/OIDC match *verified* e-mails
+    // (or "sub:<id>"); GitHub matches "id:<numeric id>" (recommended,
+    // see https://api.github.com/users/<login>) or the login name.
+    // .admin_public_url = "https://admin.example.com",
+    // .oauth_providers = .{
+    //     .{
+    //         .name = "google",
+    //         .kind = .google,
+    //         .label = "Google",
+    //         .client_id = "1234-abc.apps.googleusercontent.com",
+    //         .client_secret_env = "ZERVERG_GOOGLE_SECRET",
+    //         .allowed_users = .{"me@gmail.com"},
+    //     },
+    //     .{
+    //         .name = "github",
+    //         .kind = .github,
+    //         .label = "GitHub",
+    //         .client_id = "Ov23li...",
+    //         .client_secret_env = "ZERVERG_GITHUB_SECRET",
+    //         .allowed_users = .{"id:583231"},
+    //     },
+    //     // Any OpenID Connect provider (GitLab, Keycloak, Authentik):
+    //     // .{ .name = "sso", .kind = .oidc,
+    //     //    .issuer = "https://sso.example.com/realms/home", ... },
+    // },
+
+    // .proxy: an authenticating reverse proxy sets a user header.
+    // .proxy_user_header = "x-forwarded-user",
+    // .trusted_proxies = .{"127.0.0.1"},
+    // .proxy_allowed_users = .{"me"},
     .session_ttl_s = 28800,
     .login_max_failures = 5,
     .login_lockout_s = 900,

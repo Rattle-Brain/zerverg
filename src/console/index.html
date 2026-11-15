@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>zerverg console</title>
+<link rel="stylesheet" href="/console.css">
+<script src="/console.js" defer></script>
+</head>
+<body>
+
+<div id="topbar">
+  <span id="brand">zerverg <small>console</small></span>
+  <span id="userbox" hidden>
+    logged in as <b id="username"></b>
+    | <a href="#/account">account</a>
+    | <a id="sitelink" href="/" target="_blank" rel="noopener">view site</a>
+    | <a href="#" id="logout">log out</a>
+  </span>
+</div>
+
+<div id="tabs" hidden>
+  <a href="#/posts">Posts &amp; pages</a>
+  <a href="#/layouts">Layouts</a>
+  <a href="#/styles">Styles</a>
+  <a href="#/snippets">Snippets</a>
+  <a href="#/media">Media</a>
+  <a href="#/site">Site settings</a>
+</div>
+
+<div id="flash" hidden></div>
+
+<div id="content">
+  <noscript><p>The console needs JavaScript. The REST API under
+  <code>/api/v1</code> works without it.</p></noscript>
+</div>
+
+<div id="footer">
+  zerverg admin console &middot; everything here goes through
+  <code>/api/v1</code>
+</div>
+
+</body>
+</html>

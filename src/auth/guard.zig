@@ -1,14 +1,24 @@
-//! Decides whether a request may reach an admin route.
+//! Decides who is making a request, and whether they may.
 //!
-//! Two ways in: a session cookie (web UI) or HTTP Basic credentials
-//! (scripts, curl). Dev mode lets everything through.
+//! The server listens on two surfaces:
+//!   - public (site, port 7080): the API accepts HTTP Basic only, and
+//!     only with the password method. Session cookies are ignored
+//!     here, because browsers send cookies to every port of a host
+//!     and site snippets run on this origin.
+//!   - admin (console, port 9080): session cookies (from a password
+//!     or "sign in with ..." login), Basic, or a trusted proxy
+//!     header, depending on `auth_method`.
+//!
+//! With `oauth` or `proxy`, password login is disabled entirely, so
+//! the factory `admin:admin` cannot become a back door.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const App = @import("../App.zig");
 const Request = @import("../http/Request.zig");
 const client_key = @import("../http/client_key.zig");
-const password = @import("password.zig");
+const proxy_auth = @import("proxy_auth.zig");
 
 pub const session_cookie = "zv_session";
 
@@ -17,18 +27,82 @@ pub const session_cookie = "zv_session";
 /// we never grant, so it blocks CSRF.
 pub const csrf_header_value = "zerverg";
 
-pub const Error = error{ Unauthorized, Forbidden, TooManyAttempts };
+pub const Surface = enum { public, admin };
 
-pub fn authorize(app: *App, request: *const Request) Error!void {
-    if (app.config.dev_mode) return;
-    if (request.cookieValue(session_cookie)) |token| {
-        if (app.sessions.isValid(token)) return;
+pub const Via = enum { dev, session, basic, proxy };
+
+pub const Principal = struct {
+    name: []const u8,
+    via: Via,
+    /// Factory password still active: only changing it is allowed.
+    must_change: bool = false,
+};
+
+pub const Error = error{
+    Unauthorized,
+    Forbidden,
+    TooManyAttempts,
+} || Allocator.Error;
+
+pub fn authorize(
+    app: *App,
+    arena: Allocator,
+    request: *const Request,
+    surface: Surface,
+) Error!Principal {
+    if (app.config.dev_mode) return .{ .name = "dev", .via = .dev };
+    switch (app.config.auth_method) {
+        .password => return passwordPrincipal(app, arena, request, surface),
+        .oauth => {
+            if (surface == .public) return error.Unauthorized;
+            const principal = try sessionPrincipal(app, arena, request, false);
+            return principal orelse error.Unauthorized;
+        },
+        .proxy => {
+            if (surface == .public) return error.Unauthorized;
+            const user = try proxy_auth.userFrom(
+                app.trusted_proxies,
+                app.config.proxy_allowed_users,
+                request.peer,
+                request.header(app.config.proxy_user_header),
+            );
+            return .{ .name = user, .via = .proxy };
+        },
     }
-    var storage: [256]u8 = undefined;
-    if (basicCredentials(request, &storage)) |creds| {
-        return checkCredentials(app, request.peer, creds.user, creds.pass);
+}
+
+fn passwordPrincipal(
+    app: *App,
+    arena: Allocator,
+    request: *const Request,
+    surface: Surface,
+) Error!Principal {
+    const must_change = app.credentials.mustChange();
+    if (surface == .admin) {
+        if (try sessionPrincipal(app, arena, request, must_change)) |p| {
+            return p;
+        }
     }
-    return error.Unauthorized;
+    var storage: [512]u8 = undefined;
+    const creds = basicCredentials(request, &storage) orelse
+        return error.Unauthorized;
+    try checkCredentials(app, request.peer, creds.user, creds.pass);
+    return .{
+        .name = app.config.admin_user,
+        .via = .basic,
+        .must_change = must_change,
+    };
+}
+
+fn sessionPrincipal(
+    app: *App,
+    arena: Allocator,
+    request: *const Request,
+    must_change: bool,
+) Allocator.Error!?Principal {
+    const token = request.cookieValue(session_cookie) orelse return null;
+    const user = try app.sessions.userOf(arena, token) orelse return null;
+    return .{ .name = user, .via = .session, .must_change = must_change };
 }
 
 /// Browser-originated state changes need the CSRF header; Basic auth
@@ -51,15 +125,7 @@ pub fn checkCredentials(
 ) Error!void {
     const key = client_key.of(peer);
     if (app.limiter.isLocked(key)) return error.TooManyAttempts;
-    const user_ok = password.constantTimeEql(user, app.config.admin_user);
-    // Always verify, so timing does not reveal whether the user exists.
-    const pass_ok = password.verify(
-        app.gpa,
-        app.io,
-        app.config.admin_password_hash,
-        pass,
-    );
-    if (user_ok and pass_ok) {
+    if (app.credentials.verify(user, pass)) {
         app.limiter.recordSuccess(key);
         return;
     }
@@ -75,7 +141,7 @@ const Credentials = struct {
 /// Decodes `Authorization: Basic ...` into `storage`.
 fn basicCredentials(
     request: *const Request,
-    storage: *[256]u8,
+    storage: *[512]u8,
 ) ?Credentials {
     const header = request.authorization orelse return null;
     const prefix = "Basic ";

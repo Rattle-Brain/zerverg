@@ -14,7 +14,8 @@ pub const usage =
     \\  --config <path>  Config file (default /etc/zerverg/zerverg.zon)
     \\  --data <dir>     Data directory (overrides config)
     \\  --listen <addr>  Listen address (overrides config)
-    \\  --port <port>    HTTP port (overrides config)
+    \\  --port <port>    Public site port (default 7080)
+    \\  --admin-port <p> Admin console port (default 9080)
     \\  --dev            Development mode: NO AUTH, binds 127.0.0.1
     \\
 ;
@@ -24,6 +25,7 @@ pub const ServeOptions = struct {
     data_dir: ?[]const u8 = null,
     listen_address: ?[]const u8 = null,
     port: ?u16 = null,
+    admin_port: ?u16 = null,
     dev: bool = false,
 };
 
@@ -69,13 +71,18 @@ fn parseServe(args: []const []const u8) ParseError!ServeOptions {
         } else if (eql(flag, "--listen")) {
             options.listen_address = value;
         } else if (eql(flag, "--port")) {
-            options.port = std.fmt.parseInt(u16, value, 10) catch
-                return error.InvalidPort;
+            options.port = try parsePort(value);
+        } else if (eql(flag, "--admin-port")) {
+            options.admin_port = try parsePort(value);
         } else {
             return error.UnknownOption;
         }
     }
     return options;
+}
+
+fn parsePort(value: []const u8) ParseError!u16 {
+    return std.fmt.parseInt(u16, value, 10) catch error.InvalidPort;
 }
 
 fn eql(a: []const u8, b: []const u8) bool {

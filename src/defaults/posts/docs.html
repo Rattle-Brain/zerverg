@@ -13,6 +13,7 @@ interface see the <a href="/api">api reference</a>.</p>
 
 <ul>
   <li><a href="#setup">setup</a></li>
+  <li><a href="#console">admin console and authentication</a></li>
   <li><a href="#concepts">concepts</a></li>
   <li><a href="#content">content: posts and pages</a></li>
   <li><a href="#layouts">layouts (xml)</a></li>
@@ -32,17 +33,108 @@ listens on 127.0.0.1 only):</p>
 <pre><code><span class="prompt"></span>zig build
 <span class="prompt"></span>./zig-out/bin/zerverg serve --dev --data ./site</code></pre>
 
-<p>For a real deployment, hash a password and put it in the config file
-(or the <code>ZERVERG_ADMIN_PASSWORD_HASH</code> environment variable):</p>
+<p>For a real deployment just run <code>zerverg serve</code>: the site
+listens on port <code>7080</code> and the admin console on
+<code>9080</code>. The factory login is <code>admin</code> /
+<code>admin</code>; the console makes you change it before anything
+else works.</p>
 
-<pre><code><span class="prompt"></span>printf '%s\n' 'my password' | zerverg hash-password
-$argon2id$v=19$m=19456,t=2,p=1$...
-<span class="prompt"></span>sudo cp deploy/zerverg.example.zon /etc/zerverg/zerverg.zon
-<span class="prompt"></span>zerverg serve</code></pre>
+<pre><code><span class="prompt"></span>sudo cp deploy/zerverg.example.zon /etc/zerverg/zerverg.zon
+<span class="prompt"></span>zerverg serve
+warning: DEFAULT CREDENTIALS ACTIVE: admin / admin</code></pre>
 
 <p>On first start, zerverg seeds the data directory with this default
 site. Delete or replace any of it; it is never re-created once
 <code>site.json</code> exists.</p>
+
+<h2 id="console">admin console and authentication</h2>
+
+<p>The console is a plain web interface over the same REST API: browse
+entries, layouts, styles, snippets and media, upload files, roll back
+versions, change site settings. It has no editor on purpose: content is
+uploaded as files.</p>
+
+<p>It runs on its own port (<code>admin_port</code>, default 9080)
+because a different port is a different browser origin: snippets on the
+public site can never ride the console's session. Keep 9080 off the
+internet: forward only the site port.</p>
+
+<table>
+  <thead><tr><th>auth_method</th><th>who gets in</th></tr></thead>
+  <tbody>
+    <tr><td><code>.password</code></td><td>the admin user, by console
+      login or HTTP Basic (default)</td></tr>
+    <tr><td><code>.oauth</code></td><td>"Sign in with Google", "Sign in
+      with GitHub", or any OpenID Connect provider; only accounts on the
+      allowlist</td></tr>
+    <tr><td><code>.proxy</code></td><td>the user named in
+      <code>proxy_user_header</code> by an authenticating proxy listed in
+      <code>trusted_proxies</code> (Authelia, oauth2-proxy, ...)</td></tr>
+  </tbody>
+</table>
+
+<p>With <code>oauth</code> or <code>proxy</code>, password login is
+switched off entirely, so the factory password cannot become a back
+door.</p>
+
+<h3>sign in with Google / GitHub</h3>
+
+<pre><code>.auth_method = .oauth,
+.admin_public_url = "https://admin.example.com",
+.oauth_providers = .{
+    .{ .name = "google", .kind = .google, .label = "Google",
+       .client_id = "1234-abc.apps.googleusercontent.com",
+       .client_secret_env = "ZERVERG_GOOGLE_SECRET",
+       .allowed_users = .{"me@gmail.com"} },
+    .{ .name = "github", .kind = .github, .label = "GitHub",
+       .client_id = "Ov23li...",
+       .client_secret_env = "ZERVERG_GITHUB_SECRET",
+       .allowed_users = .{"id:583231"} },
+},</code></pre>
+
+<ol>
+  <li>Create an OAuth client with the provider (Google Cloud console,
+    GitHub developer settings, ...). Callback URL:
+    <code>&lt;admin_public_url&gt;/api/v1/auth/oauth/&lt;name&gt;/callback</code>.</li>
+  <li>Put the client id in the config and the secret in an environment
+    variable named by <code>client_secret_env</code>.</li>
+  <li>List who may sign in. This is <strong>mandatory</strong>: without
+    it, anyone with an account at the provider could.</li>
+</ol>
+
+<table>
+  <thead><tr><th>kind</th><th>allowed_users entries</th></tr></thead>
+  <tbody>
+    <tr><td><code>.google</code>, <code>.oidc</code></td><td>verified
+      e-mail addresses, or <code>sub:&lt;subject&gt;</code></td></tr>
+    <tr><td><code>.github</code></td><td><code>id:&lt;number&gt;</code>
+      (recommended: logins can be renamed and re-registered by someone
+      else), or a login name</td></tr>
+  </tbody>
+</table>
+
+<p>Under the hood: authorization code flow with PKCE, a single-use
+<code>state</code> bound to your browser by a cookie, a nonce, and for
+OpenID providers a signature-checked ID token (RS256 or ES256; issuer,
+audience, expiry and nonce verified). Providers must use HTTPS
+(loopback addresses excepted, for testing).</p>
+
+<p><strong>Where the password lives</strong>, in priority order:</p>
+
+<ol>
+  <li><code>admin_password_hash</code> in the config file or the
+    <code>ZERVERG_ADMIN_PASSWORD_HASH</code> environment variable. It
+    wins, and the console cannot change it. Generate one with
+    <code>printf '%s\n' 'pw' | zerverg hash-password</code>.</li>
+  <li><code>auth.json</code> in the data directory (mode 0600), written
+    by the console's password form.</li>
+  <li>The factory default, <code>admin</code>. Until it is changed, the
+    API refuses everything except changing it.</li>
+</ol>
+
+<p>Forgot the password? Stop the server, delete
+<code>auth.json</code>, start again: the factory password returns, and
+with it the forced change.</p>
 
 <h2 id="concepts">concepts</h2>
 
@@ -69,7 +161,8 @@ styles/&lt;name&gt;/&lt;version&gt;.css  + HEAD
 snippets/&lt;name&gt;/&lt;version&gt;.js + HEAD
 posts/&lt;slug&gt;.html
 media/&lt;file&gt;
-site.json        title + active layout, style, snippets</code></pre>
+site.json        title + active layout, style, snippets
+auth.json        console-managed password hash (0600)</code></pre>
 
 <p>Back it up with <code>tar</code>. Version it with <code>git</code>.</p>
 
@@ -218,10 +311,15 @@ then command-line flags. See <code>deploy/zerverg.example.zon</code>.</p>
   <thead><tr><th>key</th><th>default</th><th></th></tr></thead>
   <tbody>
     <tr><td>listen_address</td><td>0.0.0.0</td><td>env ZERVERG_LISTEN</td></tr>
-    <tr><td>http_port</td><td>7080</td><td></td></tr>
+    <tr><td>http_port</td><td>7080</td><td>public site</td></tr>
+    <tr><td>admin_port</td><td>9080</td><td>admin console</td></tr>
+    <tr><td>admin_listen_address</td><td>= listen_address</td>
+      <td>env ZERVERG_ADMIN_LISTEN</td></tr>
+    <tr><td>auth_method</td><td>.password</td><td>.password, .oauth,
+      .proxy</td></tr>
     <tr><td>data_dir</td><td>/var/lib/zerverg</td><td>env ZERVERG_DATA_DIR</td></tr>
     <tr><td>admin_user</td><td>admin</td><td>env ZERVERG_ADMIN_USER</td></tr>
-    <tr><td>admin_password_hash</td><td>(required)</td>
+    <tr><td>admin_password_hash</td><td>(empty: console-managed)</td>
       <td>env ZERVERG_ADMIN_PASSWORD_HASH</td></tr>
     <tr><td>max_body_bytes</td><td>128 MiB</td><td>hard request cap</td></tr>
     <tr><td>max_text_upload_bytes</td><td>4 MiB</td><td>html, xml, css, js</td></tr>
@@ -254,7 +352,9 @@ then command-line flags. See <code>deploy/zerverg.example.zon</code>.</p>
     cross-origin policies on every response.</li>
   <li><strong>sessions</strong>: random 256-bit tokens, stored hashed,
     <code>HttpOnly</code>, <code>SameSite=Strict</code>, scoped to
-    <code>/api</code>; writes need <code>X-Requested-With</code>.</li>
+    <code>/api</code>, accepted on the console port only; writes need
+    <code>X-Requested-With</code>. Changing the password logs out every
+    other session.</li>
 </ul>
 
 <p class="note">Behind a reverse proxy every client shares the proxy's

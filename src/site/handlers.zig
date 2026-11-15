@@ -16,7 +16,12 @@ pub fn index(ctx: *Context) !Response {
 }
 
 pub fn entry(ctx: *Context) !Response {
-    return pages.entry(ctx, ctx.request.param("slug"));
+    return pages.entry(ctx, ctx.request.param("slug")) catch |err|
+        switch (err) {
+            // Not a valid slug, so certainly not a page.
+            error.InvalidName => error.NotFound,
+            else => err,
+        };
 }
 
 /// `/search?q=...`; the query is capped at 100 bytes.
@@ -66,18 +71,6 @@ pub fn mediaFile(ctx: *Context) !Response {
         // Neutralises scripts embedded in SVGs opened directly.
         .csp = "sandbox; default-src 'none'; style-src 'unsafe-inline'",
     };
-}
-
-/// Placeholder until the admin UI milestone lands.
-pub fn adminPlaceholder(_: *Context) !Response {
-    var response = Response.html(
-        \\<!doctype html><html><head><title>zerverg admin</title></head>
-        \\<body><h1>zerverg admin</h1>
-        \\<p>The web UI arrives in the next milestone. The REST API is
-        \\live under <code>/api/v1</code>.</p></body></html>
-    );
-    response.csp = "default-src 'none'; frame-ancestors 'none'";
-    return response;
 }
 
 fn contains(haystack: []const []const u8, needle: []const u8) bool {

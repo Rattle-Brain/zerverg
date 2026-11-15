@@ -6,6 +6,7 @@ const std = @import("std");
 const App = @import("App.zig");
 const Request = @import("http/Request.zig");
 const Response = @import("http/Response.zig");
+const guard = @import("auth/guard.zig");
 
 pub const Handler = *const fn (ctx: *Context) anyerror!Response;
 
@@ -14,3 +15,6 @@ const Context = @This();
 app: *App,
 request: *Request,
 arena: std.mem.Allocator,
+surface: guard.Surface,
+/// Set on admin routes once authorised.
+principal: ?guard.Principal = null,

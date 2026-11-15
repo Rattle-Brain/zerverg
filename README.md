@@ -10,6 +10,7 @@
 <br><br>
 
 **[ [quick start](#-quick-start) ]** &nbsp;
+**[ [console](#-admin-console) ]** &nbsp;
 **[ [how it works](#-how-it-works) ]** &nbsp;
 **[ [api](#-api) ]** &nbsp;
 **[ [hardening](#-hardening) ]** &nbsp;
@@ -56,31 +57,76 @@ something.
 
 ```console
 $ zig build
-$ ./zig-out/bin/zerverg serve --dev --data ./site
-warning: DEVELOPMENT MODE: authentication is DISABLED.
+$ ./zig-out/bin/zerverg serve --data ./site
 info: fresh data directory: installing the default site
-info: listening on http://127.0.0.1:7080
+warning: DEFAULT CREDENTIALS ACTIVE: admin / admin
+info: listening on http://0.0.0.0:7080     <- the site
+info: listening on http://0.0.0.0:9080     <- the admin console
 ```
 
-Open <http://127.0.0.1:7080>. The default site *is* the manual: its
-`/docs` and `/api` pages document everything below in more detail.
+| | |
+| --- | --- |
+| **site** | <http://localhost:7080>, the default site *is* the manual (`/docs`, `/api`) |
+| **console** | <http://localhost:9080>, log in as `admin` / `admin`, then pick a new password (forced) |
+
+Configuration lives in `/etc/zerverg/zerverg.zon` (see
+[`deploy/zerverg.example.zon`](deploy/zerverg.example.zon)). Precedence:
+defaults → config file → environment (`ZERVERG_*`) → command-line flags.
 
 > [!WARNING]
-> `--dev` turns authentication **off** and binds to `127.0.0.1` only.
-> Never expose a dev instance to a network you don't trust.
+> `--dev` turns authentication **off** on both ports and binds to
+> `127.0.0.1`. Never expose a dev instance to a network you don't trust.
 
-### for real
+---
 
-```console
-$ printf '%s\n' 'my password' | ./zig-out/bin/zerverg hash-password
-$argon2id$v=19$m=19456,t=2,p=1$...
-$ sudo cp deploy/zerverg.example.zon /etc/zerverg/zerverg.zon   # paste the hash
-$ ./zig-out/bin/zerverg serve
+## ■ admin console
+
+<p align="center">
+  <img src="docs/console.png" alt="the zerverg admin console" width="760">
+</p>
+
+A plain, no-frills web interface over the REST API: browse posts,
+layouts, styles, snippets and media, upload files, view versions and roll
+back, switch the active theme. Files only, no editor, by design.
+
+It listens on **its own port** (`admin_port`, 9080). A different port is
+a different browser origin, so JavaScript snippets on the public site can
+never ride the console session. Forward the site port to the internet;
+keep 9080 on your LAN.
+
+| `auth_method` | who gets in |
+| --- | --- |
+| `.password` *(default)* | the admin, by console login or HTTP Basic |
+| `.oauth` | **Sign in with Google, GitHub** or any OpenID Connect provider (GitLab, Keycloak, Authentik, ...), limited to an allowlist |
+| `.proxy` | the user an authenticating proxy (Authelia, oauth2-proxy, ...) names in a header, from `trusted_proxies` only |
+
+### sign in with Google / GitHub
+
+```zon
+.auth_method = .oauth,
+.admin_public_url = "https://admin.example.com",
+.oauth_providers = .{
+    .{ .name = "google", .kind = .google, .label = "Google",
+       .client_id = "1234-abc.apps.googleusercontent.com",
+       .client_secret_env = "ZERVERG_GOOGLE_SECRET",
+       .allowed_users = .{"me@gmail.com"} },
+    .{ .name = "github", .kind = .github, .label = "GitHub",
+       .client_id = "Ov23li...",
+       .client_secret_env = "ZERVERG_GITHUB_SECRET",
+       .allowed_users = .{"id:583231"} },
+},
 ```
 
-Secrets can also come from the environment
-(`ZERVERG_ADMIN_PASSWORD_HASH`, `ZERVERG_DATA_DIR`, ...). Precedence:
-defaults → config file → environment → command-line flags.
+Register an OAuth app with each provider, with the callback URL
+`<admin_public_url>/api/v1/auth/oauth/<name>/callback`. The allowlist
+is mandatory, or every Google user on earth could sign in. GitHub
+entries should be `id:<number>`: login names can be renamed and then
+claimed by someone else.
+
+The password comes from `admin_password_hash` in the config (pinned; the
+console can't change it), else from the console-managed `auth.json`, else
+the factory `admin`, which must be changed before the API does anything
+else. Forgot it? Stop the server, delete `auth.json`, start again.
 
 ---
 
@@ -102,7 +148,8 @@ request ─► layout (xml) ─► <main/> ◄─ entry (html) ◄─ <zv-entrie
 ├── snippets/<name>/<version>.js + HEAD
 ├── posts/<slug>.html                      posts and pages
 ├── media/<file>                           images, video
-└── site.json                              title, active layout/style/snippets
+├── site.json                              title, active layout/style/snippets
+└── auth.json                              console-managed password (0600)
 ```
 
 Back it up with `tar`. Version it with `git`. Every write is atomic.
@@ -147,8 +194,9 @@ The page with slug `index` is the home page.
 
 ## ■ api
 
-Everything goes through `/api/v1`, with HTTP Basic auth or a session
-cookie from `POST /auth/login`.
+Everything goes through `/api/v1`. On the console port (9080): session
+cookie (password or "sign in with ..." login), HTTP Basic, or proxy headers. On
+the site port (7080): HTTP Basic only, so scripts and CI can publish.
 
 ```console
 $ curl -u admin:pw -X PUT --data-binary @hello.html \
@@ -161,7 +209,7 @@ $ curl -u admin:pw -X POST \
 
 | method | path | |
 | --- | --- | --- |
-| `POST` | `/auth/login` · `/auth/logout` | `GET /auth/session` is public |
+| `POST` | `/auth/login` · `/auth/logout` · `/auth/password` | console port; `GET /auth/session` is public |
 | `GET` `POST` | `/posts` | list · create (slug from meta) |
 | `GET` `PUT` `DELETE` | `/posts/:slug` | raw HTML |
 | `GET` · `PUT` `DELETE` | `/media` · `/media/:file` | list · raw bytes |
@@ -183,8 +231,15 @@ On by default, tunable in the config file:
   per route; `max_body_bytes` (128 MiB) is the hard ceiling
 - **rate limit** 20 req/s per client, bursts of 120; IPv6 grouped by /64
 - **connections** 256 total, 16 per IP, 60 s lifetime, 1000 requests each
-- **logins** argon2id, lockout after 5 failures, hashed session tokens,
-  `HttpOnly` + `SameSite=Strict` cookies, CSRF header on writes
+- **logins** argon2id, lockout after 5 failures, factory password must
+  be changed first, hashed session tokens, `HttpOnly` +
+  `SameSite=Strict` cookies accepted on the console port only, CSRF
+  header on writes
+- **console isolation** separate port and origin; oauth / proxy modes
+  disable password login entirely
+- **sign in with ...** authorization code flow + PKCE, single-use state
+  bound to the browser, nonce, ID token signature (RS256/ES256 only)
+  and claims checked, mandatory allowlist, HTTPS-only providers
 - **headers** CSP, nosniff, frame denial, referrer, permissions and
   cross-origin policies; HSTS + `Secure` cookies with `.https = true`
 - **uploads** UTF-8 text only, layouts schema-validated, media checked
@@ -208,17 +263,19 @@ $ zig build test
 src/
 ├── main.zig  cli.zig  config.zig  routes.zig
 ├── http/      server, request, router, limits, headers
-├── auth/      passwords, sessions, login lockout
+├── auth/      passwords, sessions, lockout, proxy headers
+│   └── oauth/ sign in with Google / GitHub / OpenID Connect
 ├── store/     files, versioned libraries, posts, media
 ├── layout/    xml parser, schema, renderer
 ├── site/      public pages, search
 ├── api/       REST handlers
+├── console/   the admin console (html, css, js)
 └── defaults/  the first-boot site
 ```
 
 House rules: functions ≤ 60 lines, lines ≤ 80 columns, `zig fmt`.
 
-**roadmap** `[ ]` admin web UI · `[ ]` native TLS · `[ ]` docker image
+**roadmap** `[x]` admin console · `[ ]` native TLS · `[ ]` docker image
 
 ---
 

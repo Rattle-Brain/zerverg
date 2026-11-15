@@ -36,13 +36,16 @@
 <h2>first steps</h2>
 
 <ol>
-  <li>Set an admin password and restart (see <a href="/docs">docs</a>).</li>
-  <li>Upload a post: <code>PUT /api/v1/posts/my-first-post</code>.</li>
+  <li>Open the admin console on port <code>9080</code> and log in as
+    <code>admin</code> / <code>admin</code>. You will be asked to choose
+    a new password straight away.</li>
+  <li>Upload a post from the console, or with
+    <code>PUT /api/v1/posts/my-first-post</code>.</li>
   <li>Replace this page: upload your own <code>index</code> page.</li>
   <li>Make it yours: upload a stylesheet and activate it.</li>
 </ol>
 
-<pre><code><span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @hello.html \
+<pre><code><span class="prompt"></span>curl -u admin:new-password -X PUT --data-binary @hello.html \
      http://localhost:7080/api/v1/posts/hello</code></pre>
 
 <p class="note">Running with <code>--dev</code>? Authentication is off.
