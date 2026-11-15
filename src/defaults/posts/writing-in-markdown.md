@@ -2,6 +2,8 @@
 title: writing in markdown
 date: 2026-11-15
 tags: zerverg, markdown
+description: Write posts in Markdown and let the stylesheet decide how they look.
+image: media:cover-markdown.svg
 ---
 
 Entries can be **Markdown** as well as HTML. Write them in the console's

@@ -6,10 +6,12 @@
 <meta name="robots" content="noindex, nofollow">
 <title>zerverg console</title>
 <link rel="stylesheet" href="/console/console.css">
+<script src="/console/theme.js"></script>
 <script src="/console/core.js" defer></script>
 <script src="/console/views.js" defer></script>
 <script src="/console/editor.js" defer></script>
 <script src="/console/write.js" defer></script>
+<script src="/console/themes.js" defer></script>
 </head>
 <body>
 
@@ -21,6 +23,7 @@
     <span>zerverg <small>console</small></span>
   </a>
   <span class="spacer"></span>
+  <button class="btn ghost icon-only" type="button" id="theme-toggle"></button>
   <a class="btn ghost" id="site-link" href="/" target="_blank"
      rel="noopener">View site <span aria-hidden="true">↗</span></a>
   <span class="user-chip">
@@ -44,6 +47,8 @@
     </div>
     <div class="nav-group">
       <h2>Design</h2>
+      <a class="nav-link" href="#/themes"><span class="icon"
+        aria-hidden="true">◈</span>Themes</a>
       <a class="nav-link" href="#/styles"><span class="icon"
         aria-hidden="true">◐</span>Styles</a>
       <a class="nav-link" href="#/layouts"><span class="icon"

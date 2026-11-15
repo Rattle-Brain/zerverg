@@ -25,6 +25,11 @@ pub const PageContext = struct {
     /// All entries, newest first (for recent posts and page links).
     entries: []const posts.Summary,
     search_query: []const u8 = "",
+    /// The home page: `<home>` children render only here.
+    is_home: bool = false,
+    /// Stylesheet to embed instead of linking the active one (theme
+    /// previews of a style that is not active yet).
+    inline_css: ?[]const u8 = null,
 };
 
 pub fn renderDocument(
@@ -69,7 +74,9 @@ fn writeHead(w: *Writer, layout: xml.Element, ctx: PageContext) Error!void {
         try fragments.writeUrl(w, url);
         try w.writeAll("\">\n");
     }
-    if (ctx.site.active_style != null) {
+    if (ctx.inline_css) |css| {
+        try w.print("<style>\n{s}\n</style>\n", .{css});
+    } else if (ctx.site.active_style != null) {
         try w.writeAll(
             "<link rel=\"stylesheet\" href=\"/assets/style.css\">\n",
         );
@@ -113,6 +120,8 @@ fn renderElement(w: *Writer, e: xml.Element, ctx: PageContext) Error!void {
         .text => try wrapText(w, e, "p", "zv-text"),
         .search => try renderSearch(w, e, ctx),
         .@"recent-posts" => try renderRecent(w, e, ctx),
+        .@"post-cards" => try renderCards(w, e, ctx),
+        .home => if (ctx.is_home) try renderChildren(w, e, ctx),
         .raw => for (e.children) |c| switch (c) {
             .text => |t| try w.writeAll(t),
             .element => {},
@@ -235,6 +244,20 @@ fn renderRecent(w: *Writer, e: xml.Element, ctx: PageContext) Error!void {
     );
 }
 
+/// `<post-cards count="6" tag="x" kind="post"/>`
+fn renderCards(w: *Writer, e: xml.Element, ctx: PageContext) Error!void {
+    var filter: fragments.EntryFilter = .{ .limit = 6 };
+    if (e.attr("count")) |c| filter.limit = std.fmt.parseInt(u8, c, 10) catch 6;
+    if (e.attr("kind")) |k| filter.kind = std.meta.stringToEnum(
+        @TypeOf(filter.kind),
+        k,
+    ) orelse .post;
+    filter.tag = e.attr("tag");
+    try w.writeAll("<div class=\"zv-post-cards\">\n");
+    try fragments.writeEntryCards(w, ctx.entries, filter);
+    try w.writeAll("</div>\n");
+}
+
 test "renders a layout" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -262,4 +285,33 @@ test "renders a layout" {
     try expect(has(html, ">x &amp; y</a>"));
     try expect(has(html, "<main class=\"zv-main\">\n<p>body</p>"));
     try expect(has(html, "class=\"zv-kind-sidebar-right\""));
+}
+
+test "home-only blocks and cards" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const layout = try schema.parseLayout(arena,
+        \\<layout><home><post-cards count="2"/></home><main/></layout>
+    );
+    const entries = [_]posts.Summary{.{ .slug = "a", .meta = .{
+        .title = "A",
+        .description = "about a",
+        .image = "media:a.svg",
+    } }};
+    var ctx: PageContext = .{
+        .site = .{},
+        .title = "",
+        .main_html = "",
+        .entries = &entries,
+        .inline_css = "p{}",
+    };
+    const inner = try renderDocument(arena, layout, ctx);
+    try std.testing.expect(std.mem.indexOf(u8, inner, "zv-card") == null);
+    try std.testing.expect(std.mem.indexOf(u8, inner, "<style>") != null);
+    ctx.is_home = true;
+    const home = try renderDocument(arena, layout, ctx);
+    const expected = "src=\"/media/a.svg\"";
+    try std.testing.expect(std.mem.indexOf(u8, home, expected) != null);
+    try std.testing.expect(std.mem.indexOf(u8, home, "about a") != null);
 }

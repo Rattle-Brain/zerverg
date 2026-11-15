@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  zerverg "magazine" starter theme.
+
+  A masthead, then the latest stories as image cards on the front
+  page. Give posts a cover with `image: media:photo.jpg` and a
+  one-line `description:` to fill the cards.
+-->
+<layout kind="single" favicon="media:zerverg-logo.svg" lang="en">
+
+  <header>
+    <site-title/>
+    <tagline>Stories, notes and long reads.</tagline>
+    <nav>
+      <link href="/">Front page</link>
+      <page-links/>
+      <link href="/search">Search</link>
+    </nav>
+  </header>
+
+  <home>
+    <section title="Latest stories">
+      <post-cards count="6"/>
+    </section>
+  </home>
+
+  <main/>
+
+  <footer>
+    <section title="Recently published">
+      <recent-posts count="5"/>
+    </section>
+    <section title="Search the archive">
+      <search placeholder="Search stories"/>
+    </section>
+    <text>Published with zerverg.</text>
+  </footer>
+
+</layout>

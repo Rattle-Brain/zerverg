@@ -235,7 +235,8 @@ test {
     _ = @import("http/https_redirect.zig");
     _ = @import("tls/der.zig");
     _ = @import("tls/pem.zig");
-    _ = @import("tls/self_signed.zig");
+    _ = @import("tls/x509.zig");
+    _ = @import("tls/local_ca.zig");
     _ = @import("tls/identity.zig");
     _ = @import("content/markdown.zig");
     _ = @import("content/front_matter.zig");

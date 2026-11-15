@@ -6,12 +6,62 @@ const Writer = std.Io.Writer;
 
 const posts = @import("../store/posts.zig");
 const meta = @import("../content/meta.zig");
+const schema = @import("../layout/schema.zig");
 
 pub const EntryFilter = struct {
     kind: meta.Kind = .post,
     tag: ?[]const u8 = null,
     limit: usize = std.math.maxInt(usize),
 };
+
+/// Entries as cards: cover image, date, title and description, for
+/// grid-style themes. Same filtering as `writeEntryList`.
+pub fn writeEntryCards(
+    w: *Writer,
+    entries: []const posts.Summary,
+    filter: EntryFilter,
+) !void {
+    var written: usize = 0;
+    for (entries) |entry| {
+        if (written == filter.limit) break;
+        if (!matches(entry, filter)) continue;
+        if (written == 0) try w.writeAll("<ul class=\"zv-cards\">\n");
+        try writeCard(w, entry);
+        written += 1;
+    }
+    if (written == 0) {
+        try w.writeAll("<p class=\"zv-empty\">nothing here yet.</p>\n");
+    } else {
+        try w.writeAll("</ul>\n");
+    }
+}
+
+fn writeCard(w: *Writer, entry: posts.Summary) !void {
+    const m = entry.meta;
+    // Slugs are validated, safe in an attribute unescaped.
+    try w.print("<li class=\"zv-card\"><a class=\"zv-card-link\" " ++
+        "href=\"/{s}\">\n", .{entry.slug});
+    if (m.image.len > 0 and schema.isSafeUrl(m.image)) {
+        try w.writeAll("<img class=\"zv-card-image\" src=\"");
+        try writeUrl(w, m.image);
+        try w.writeAll("\" alt=\"\" loading=\"lazy\">\n");
+    }
+    try w.writeAll("<span class=\"zv-card-body\">\n");
+    if (m.date.len >= 10) {
+        try w.writeAll("<time>");
+        try writeEscaped(w, m.date[0..10]);
+        try w.writeAll("</time>\n");
+    }
+    try w.writeAll("<strong class=\"zv-card-title\">");
+    try writeEscaped(w, titleOf(entry));
+    try w.writeAll("</strong>\n");
+    if (m.description.len > 0) {
+        try w.writeAll("<span class=\"zv-card-text\">");
+        try writeEscaped(w, m.description);
+        try w.writeAll("</span>\n");
+    }
+    try w.writeAll("</span>\n</a></li>\n");
+}
 
 /// `<ul>` of entries matching `filter`, newest first. `entries` must
 /// already be sorted. Writes `empty_text` when nothing matches.

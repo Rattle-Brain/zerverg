@@ -19,12 +19,24 @@ const File = struct {
 
 pub const default_layout = @embedFile("layouts/default.xml");
 
+/// Starter themes: a layout and a style with the same name. The
+/// console's Themes page offers them; "default" is active.
+pub const theme_names = [_][]const u8{
+    "default", "magazine", "landing", "newsletter",
+};
+
 const layouts = [_]File{
     .{ .name = "default", .data = default_layout },
+    .{ .name = "magazine", .data = @embedFile("layouts/magazine.xml") },
+    .{ .name = "landing", .data = @embedFile("layouts/landing.xml") },
+    .{ .name = "newsletter", .data = @embedFile("layouts/newsletter.xml") },
 };
 
 const styles = [_]File{
     .{ .name = "default", .data = @embedFile("styles/default.css") },
+    .{ .name = "magazine", .data = @embedFile("styles/magazine.css") },
+    .{ .name = "landing", .data = @embedFile("styles/landing.css") },
+    .{ .name = "newsletter", .data = @embedFile("styles/newsletter.css") },
 };
 
 const snippets = [_]File{
@@ -64,6 +76,12 @@ const media_files = [_]File{
         .name = "zerverg-banner.svg",
         .data = @embedFile("media/zerverg-banner.svg"),
     },
+    .{ .name = "cover-hello.svg", .data = @embedFile("media/cover-hello.svg") },
+    .{ .name = "cover-hood.svg", .data = @embedFile("media/cover-hood.svg") },
+    .{
+        .name = "cover-markdown.svg",
+        .data = @embedFile("media/cover-markdown.svg"),
+    },
 };
 
 pub const default_state: site_state.SiteState = .{
@@ -102,7 +120,9 @@ test "default content is valid" {
     const entry = @import("../content/entry.zig");
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
-    _ = try schema.parseLayout(arena_state.allocator(), default_layout);
+    for (layouts) |file| {
+        _ = try schema.parseLayout(arena_state.allocator(), file.data);
+    }
     for (entries) |e| {
         try validate.text(e.source.text);
         _ = try entry.metaOf(e.source);

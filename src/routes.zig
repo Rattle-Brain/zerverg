@@ -20,6 +20,7 @@ const library = @import("store/library.zig");
 const auth_api = @import("api/auth_api.zig");
 const oauth_api = @import("api/oauth_api.zig");
 const posts_api = @import("api/posts_api.zig");
+const themes_api = @import("api/themes_api.zig");
 const media_api = @import("api/media_api.zig");
 const site_api = @import("api/site_api.zig");
 const library_api = @import("api/library_api.zig");
@@ -68,6 +69,7 @@ const api_routes = [_]Route{
     route(.admin, .PUT, "/api/v1/posts/:slug", posts_api.put, .text),
     admin(.DELETE, "/api/v1/posts/:slug", posts_api.remove),
     quiet(route(.admin, .POST, "/api/v1/preview", posts_api.preview, .text)),
+    admin(.GET, "/api/v1/themes/:name/preview", themes_api.preview),
 
     admin(.GET, "/api/v1/media", media_api.list),
     route(.admin, .PUT, "/api/v1/media/:name", media_api.put, .media),

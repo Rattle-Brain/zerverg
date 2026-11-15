@@ -7,6 +7,7 @@ const Allocator = std.mem.Allocator;
 const epoch = std.time.epoch;
 
 pub const Tag = struct {
+    pub const boolean = 0x01;
     pub const integer = 0x02;
     pub const bit_string = 0x03;
     pub const octet_string = 0x04;
@@ -36,6 +37,10 @@ pub const Oid = struct {
     pub const common_name = "\x55\x04\x03";
     pub const subject_alt_name = "\x55\x1d\x11";
     pub const ext_key_usage = "\x55\x1d\x25";
+    pub const basic_constraints = "\x55\x1d\x13";
+    pub const key_usage = "\x55\x1d\x0f";
+    pub const subject_key_id = "\x55\x1d\x0e";
+    pub const authority_key_id = "\x55\x1d\x23";
     pub const server_auth = "\x2b\x06\x01\x05\x05\x07\x03\x01";
 };
 

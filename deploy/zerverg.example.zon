@@ -82,11 +82,14 @@
 
     // Native TLS (TLS 1.3). The site moves to https_port, the console
     // uses TLS on admin_port, and http_port only redirects to HTTPS.
-    // Implies .https = true. Both files empty: a self-signed pair is
-    // generated in <data_dir>/tls/ (browsers warn). Certificates are
+    // Implies .https = true. Both files empty: a local certificate
+    // authority in <data_dir>/tls/ signs a server certificate on each
+    // start; trust its ca.crt once (see README). Certificates are
     // read at startup; restart after renewing. Env overrides:
     // ZERVERG_TLS_CERT, ZERVERG_TLS_KEY.
     .tls = false,
+    // Local CA only: extra names/IPs for the server certificate.
+    // .tls_hosts = .{ "staging.lan", "192.168.1.20" },
     // .tls_cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem",
     // .tls_key_file = "/etc/letsencrypt/live/example.com/privkey.pem",
 

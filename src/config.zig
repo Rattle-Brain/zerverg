@@ -124,9 +124,13 @@ pub const Config = struct {
     /// `admin_port` with TLS, and `http_port` only redirects to HTTPS.
     tls: bool = false,
     /// PEM certificate chain (leaf first) and private key. Both empty:
-    /// a self-signed pair is generated in <data_dir>/tls/.
+    /// a local certificate authority in <data_dir>/tls/ signs one.
     tls_cert_file: []const u8 = "",
     tls_key_file: []const u8 = "",
+    /// Without cert files: extra DNS names or IPs the generated server
+    /// certificate is valid for (localhost, 127.0.0.1, ::1 and this
+    /// machine's host name are always included).
+    tls_hosts: []const []const u8 = &.{},
 
     /// Only settable through the `--dev` CLI flag, never from a file.
     dev_mode: bool = false,

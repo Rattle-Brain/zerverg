@@ -21,45 +21,70 @@ const entries_tag = @import("entries_tag.zig");
 
 const home_slug = "index";
 
+/// A layout and stylesheet to render with instead of the active
+/// ones, for trying a theme before switching to it.
+pub const Theme = struct {
+    layout: []const u8,
+    css: []const u8,
+};
+
 const Page = struct {
     layout_name: ?[]const u8 = null,
     title: []const u8,
     main_html: []const u8,
     search_query: []const u8 = "",
+    is_home: bool = false,
+    theme: ?Theme = null,
 };
 
 /// The `index` page if there is one, otherwise the list of posts.
 pub fn home(ctx: *Context) !Response {
+    return homeWith(ctx, null);
+}
+
+fn homeWith(ctx: *Context, theme: ?Theme) !Response {
     const store = ctx.app.store;
     const entries = try posts.list(store, ctx.arena);
     const source = posts.read(store, ctx.arena, home_slug) catch |err|
         switch (err) {
-            error.NotFound => return postList(ctx, entries),
+            error.NotFound => return postList(ctx, entries, theme),
             else => return err,
         };
-    return renderEntry(ctx, entries, source, "");
+    return renderEntry(ctx, entries, source, "", theme);
 }
 
 pub fn entry(ctx: *Context, slug: []const u8) !Response {
+    return entryWith(ctx, slug, null);
+}
+
+fn entryWith(ctx: *Context, slug: []const u8, theme: ?Theme) !Response {
     const store = ctx.app.store;
     const source = try posts.read(store, ctx.arena, slug);
     const entries = try posts.list(store, ctx.arena);
-    return renderEntry(ctx, entries, source, slug);
+    return renderEntry(ctx, entries, source, slug, theme);
 }
 
 /// Renders unsaved `source` exactly as the site would.
 pub fn preview(ctx: *Context, source: posts.Source) !Response {
     const entries = try posts.list(ctx.app.store, ctx.arena);
-    return renderEntry(ctx, entries, source, "preview");
+    return renderEntry(ctx, entries, source, "preview", null);
 }
 
-/// `fallback_title` is used when the entry has none; "" keeps the
-/// site title alone (home page).
+/// The home page, or the entry `slug`, rendered with `theme`.
+pub fn themePreview(ctx: *Context, slug: ?[]const u8, theme: Theme) !Response {
+    const s = slug orelse return homeWith(ctx, theme);
+    if (std.mem.eql(u8, s, home_slug)) return homeWith(ctx, theme);
+    return entryWith(ctx, s, theme);
+}
+
+/// `fallback_title` is used when the entry has none; "" marks the
+/// home page (site title alone, `<home>` blocks shown).
 fn renderEntry(
     ctx: *Context,
     entries: []const posts.Summary,
     source: posts.Source,
     fallback_title: []const u8,
+    theme: ?Theme,
 ) !Response {
     const entry_meta = try entry_mod.metaOf(source);
     const body = try entry_mod.bodyHtml(ctx.arena, source);
@@ -74,6 +99,8 @@ fn renderEntry(
         .layout_name = entry_meta.layout,
         .title = title,
         .main_html = main_html,
+        .is_home = fallback_title.len == 0,
+        .theme = theme,
     });
 }
 
@@ -111,11 +138,20 @@ fn writeHits(w: *Writer, hits: []const posts.Summary) !void {
     try w.writeAll("</ul>\n");
 }
 
-fn postList(ctx: *Context, entries: []const posts.Summary) !Response {
+fn postList(
+    ctx: *Context,
+    entries: []const posts.Summary,
+    theme: ?Theme,
+) !Response {
     var out: Writer.Allocating = .init(ctx.arena);
     try out.writer.writeAll("<h1>posts</h1>\n");
     try fragments.writeEntryList(&out.writer, entries, .{}, "zv-entries");
-    return render(ctx, entries, .{ .title = "", .main_html = out.written() });
+    return render(ctx, entries, .{
+        .title = "",
+        .main_html = out.written(),
+        .is_home = true,
+        .theme = theme,
+    });
 }
 
 /// Posts get a title header; pages render their body as-is.
@@ -161,7 +197,10 @@ fn render(
     page: Page,
 ) !Response {
     const state = try site_state.read(ctx.app.store, ctx.arena);
-    const layout_name = page.layout_name orelse state.active_layout;
+    const layout_name = if (page.theme) |t|
+        t.layout
+    else
+        page.layout_name orelse state.active_layout;
     const layout = loadLayout(ctx, layout_name);
     const body = try layout_render.renderDocument(ctx.arena, layout, .{
         .site = state,
@@ -169,6 +208,8 @@ fn render(
         .main_html = page.main_html,
         .entries = entries,
         .search_query = page.search_query,
+        .is_home = page.is_home,
+        .inline_css = if (page.theme) |t| t.css else null,
     });
     return Response.html(body);
 }

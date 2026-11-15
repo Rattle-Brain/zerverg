@@ -500,10 +500,38 @@ ZV.views.account = function accountView() {
 };
 
 // -----------------------------------------------------------------
+// light / dark
+// -----------------------------------------------------------------
+
+function currentTheme() {
+  const chosen = document.documentElement.dataset.theme;
+  if (chosen) return chosen;
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function syncThemeToggle() {
+  const button = document.getElementById("theme-toggle");
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  button.textContent = next === "dark" ? "☾" : "☀";
+  button.setAttribute("aria-label", "Switch to " + next + " theme");
+  button.title = "Switch to " + next + " theme";
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("zv-console-theme", next); } catch (_) { /* ignore */ }
+  syncThemeToggle();
+}
+
+// -----------------------------------------------------------------
 // start
 // -----------------------------------------------------------------
 
 document.addEventListener("DOMContentLoaded", () => {
+  syncThemeToggle();
+  document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", syncThemeToggle);
   document.getElementById("logout").addEventListener("click", async () => {
     try {
       await ZV.api("POST", "/auth/logout");

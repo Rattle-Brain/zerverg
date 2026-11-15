@@ -1,0 +1,250 @@
+/*
+ * zerverg :: "newsletter" starter theme
+ *
+ * One calm column on warm paper, a book serif, nothing to distract.
+ * Pair it with the "newsletter" layout. Every class used here is
+ * listed on the /docs page.
+ */
+
+:root {
+  --paper: #fbf8f2;
+  --ink: #2a2622;
+  --muted: #7a7166;
+  --line: #e6dfd3;
+  --accent: #9a3412;
+  --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Palatino,
+    "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 20px/1.75 var(--serif);
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+img, video { max-width: 100%; height: auto; border-radius: 4px; }
+
+.zv-page { max-width: 680px; margin: 0 auto; padding: 0 22px; }
+
+/* header ----------------------------------------------------------- */
+
+.zv-header {
+  padding: 64px 0 28px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.zv-site-title {
+  color: var(--ink);
+  font-size: 2.3rem;
+  font-weight: 700;
+  font-style: italic;
+  text-decoration: none;
+}
+
+.zv-cursor { display: none; }
+
+.zv-tagline {
+  margin: 6px 0 18px;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.zv-nav ul {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 600 0.85rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.zv-nav a { color: var(--muted); text-decoration: none; }
+.zv-nav a:hover { color: var(--accent); }
+
+/* letter ----------------------------------------------------------- */
+
+.zv-main { margin: 48px 0; }
+
+.zv-entry-header { margin-bottom: 36px; text-align: center; }
+.zv-entry-header h1 { margin-bottom: 10px; }
+
+.zv-entry-meta {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  color: var(--muted);
+  font: 0.85rem var(--sans);
+}
+
+.zv-tag::before { content: "#"; }
+
+h1, h2, h3 { line-height: 1.25; font-weight: 700; }
+h1 { font-size: 2.1rem; margin: 0 0 0.6em; }
+h2 { font-size: 1.45rem; margin: 2em 0 0.6em; }
+h3 { font-size: 1.15rem; margin: 1.6em 0 0.4em; }
+
+p, ul, ol, table, pre, blockquote { margin: 0 0 1.25em; }
+
+blockquote {
+  margin-left: 0;
+  padding-left: 22px;
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  font-style: italic;
+}
+
+hr {
+  border: 0;
+  margin: 2.6em 0;
+  text-align: center;
+}
+
+hr::after { content: "⁂"; color: var(--muted); font-size: 1.3rem; }
+
+code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8em; }
+code { padding: 1px 5px; border-radius: 4px; background: #f1ebe0; }
+
+pre {
+  position: relative;
+  padding: 16px 18px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: #f1ebe0;
+  line-height: 1.55;
+}
+
+pre code { padding: 0; background: none; }
+
+table { width: 100%; border-collapse: collapse; font: 0.95rem var(--sans); }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+
+.hero { text-align: center; }
+.zv-empty { color: var(--muted); font-style: italic; }
+
+/* past issues ------------------------------------------------------ */
+
+.zv-section { margin: 48px 0; }
+
+.zv-section-title {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font: 700 0.8rem var(--sans);
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.zv-entries, .zv-recent { margin: 0; padding: 0; list-style: none; }
+
+.zv-entries li, .zv-recent li {
+  display: flex;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px dotted var(--line);
+}
+
+.zv-entries time, .zv-recent time {
+  flex: none;
+  width: 6.5em;
+  color: var(--muted);
+  font: 0.85rem/2.1 var(--sans);
+}
+
+.zv-entries a, .zv-recent a { color: var(--ink); text-decoration: none; }
+.zv-entries a:hover, .zv-recent a:hover { color: var(--accent); }
+
+/* cards, if a page uses <zv-entries view="cards"> */
+.zv-cards { margin: 0; padding: 0; list-style: none; }
+.zv-card-link { display: block; padding: 16px 0; border-bottom: 1px dotted var(--line); color: var(--ink); text-decoration: none; }
+.zv-card-image { display: none; }
+.zv-card-body { display: grid; gap: 2px; }
+.zv-card-body time { color: var(--muted); font: 0.85rem var(--sans); }
+.zv-card-title { font-size: 1.25rem; }
+.zv-card-text { color: var(--muted); }
+
+/* content blocks (Markdown `::: name`) ------------------------------ */
+
+.note, .tip, .warning {
+  margin: 0 0 1.2em;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fffdf8;
+}
+
+.tip { border-color: #c9d8c0; }
+.warning { border-color: #e7c2a8; }
+.note > :last-child, .tip > :last-child, .warning > :last-child { margin-bottom: 0; }
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+  margin-bottom: 1.25em;
+}
+
+.card { padding: 16px 18px; border: 1px solid var(--line); border-radius: 6px; }
+.card > :last-child { margin-bottom: 0; }
+.center { text-align: center; }
+
+/* subscribe, search, footer ---------------------------------------- */
+
+.zv-footer {
+  margin: 56px 0 0;
+  padding: 8px 0 56px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.zv-footer .zv-section {
+  margin: 32px 0;
+  padding: 28px;
+  border-radius: 8px;
+  background: #f3ece0;
+}
+
+.zv-footer .zv-text { margin: 0 0 16px; }
+.zv-footer > .zv-text { color: var(--muted); font: 0.85rem var(--sans); }
+
+.zv-actions { margin: 0; }
+
+.zv-button, .zv-search button, .zv-copy {
+  display: inline-block;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 0.95rem var(--sans);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.zv-copy { position: absolute; top: 8px; right: 8px; padding: 4px 10px; font-size: 0.75rem; }
+
+.zv-search { display: flex; gap: 8px; }
+
+.zv-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+}

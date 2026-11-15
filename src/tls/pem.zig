@@ -27,6 +27,35 @@ pub fn encode(
     return out.items;
 }
 
+/// The DER bytes of the first `label` block in `text`.
+pub fn decode(
+    arena: Allocator,
+    comptime label: []const u8,
+    text: []const u8,
+) ![]u8 {
+    const begin = "-----BEGIN " ++ label ++ "-----";
+    const end = "-----END " ++ label ++ "-----";
+    const start = (std.mem.indexOf(u8, text, begin) orelse
+        return error.MissingPemBlock) + begin.len;
+    const stop = std.mem.indexOfPos(u8, text, start, end) orelse
+        return error.MissingPemBlock;
+    const b64 = text[start..stop];
+    const decoder = std.base64.standard.decoderWithIgnore(" \t\r\n");
+    const out = try arena.alloc(u8, decoder.calcSizeUpperBound(b64.len));
+    const len = try decoder.decode(out, b64);
+    return out[0..len];
+}
+
+test "decode reverses encode" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const data = "any bytes \x00\x01\xff";
+    const text = try encode(arena, "THING", data);
+    const back = try decode(arena, "THING", text);
+    try std.testing.expectEqualSlices(u8, data, back);
+}
+
 test "wraps at 64 columns" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

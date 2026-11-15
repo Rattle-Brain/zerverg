@@ -179,7 +179,9 @@ auth.json        console-managed password hash (0600)</code></pre>
 &lt;meta name="zerverg:kind"   content="post"&gt;     &lt;!-- post | page --&gt;
 &lt;meta name="zerverg:tags"   content="zig,web"&gt;
 &lt;meta name="zerverg:layout" content="wide"&gt;     &lt;!-- optional --&gt;
-&lt;meta name="zerverg:slug"   content="my-post"&gt;  &lt;!-- for POST --&gt;</code></pre>
+&lt;meta name="zerverg:slug"   content="my-post"&gt;  &lt;!-- for POST --&gt;
+&lt;meta name="zerverg:description" content="One line for cards."&gt;
+&lt;meta name="zerverg:image" content="media:cover.jpg"&gt;  &lt;!-- card cover --&gt;</code></pre>
 
 <p>In Markdown, the same fields go in a header between
 <code>---</code> lines:</p>
@@ -216,7 +218,8 @@ format replaces it.</p>
     <code>zerverg:layout</code>; the global style still applies.</li>
 </ul>
 
-<p>Embed a list of entries anywhere in a page:</p>
+<p>Embed a list of entries anywhere in a page
+(<code>view="cards"</code> shows them as cards):</p>
 
 <pre><code>&lt;zv-entries kind="post" tag="zig" limit="10"&gt;&lt;/zv-entries&gt;</code></pre>
 
@@ -279,6 +282,11 @@ Layouts are validated on upload: unknown elements, attributes or
       <td><code>form.zv-search</code></td></tr>
     <tr><td><code>recent-posts</code></td><td>count (1-50)</td>
       <td><code>ul.zv-recent</code></td></tr>
+    <tr><td><code>post-cards</code></td><td>count (1-50), tag, kind</td>
+      <td><code>ul.zv-cards &gt; li.zv-card</code>: cover image, date,
+      title, description</td></tr>
+    <tr><td><code>home</code></td><td></td>
+      <td>its children, on the home page only</td></tr>
     <tr><td><code>raw</code></td><td></td>
       <td>its text, unescaped, as HTML</td></tr>
   </tbody>
@@ -286,6 +294,12 @@ Layouts are validated on upload: unknown elements, attributes or
 
 <p>URLs may be site paths (<code>/x</code>), anchors, <code>http(s)://</code>,
 <code>mailto:</code> or <code>media:file</code>.</p>
+
+<p>A <strong>theme</strong> is a layout and a stylesheet with the same
+name. Four ship with zerverg: <code>default</code> (blog),
+<code>magazine</code>, <code>landing</code> and <code>newsletter</code>.
+The console's <em>Themes</em> page previews each one on your content and
+switches both at once; duplicate one to start your own.</p>
 
 <h2 id="styles">styles (css)</h2>
 
@@ -394,10 +408,15 @@ HTTPS on its own port, and <code>http_port</code> only redirects to
 HTTPS. HSTS and <code>Secure</code> cookies are enabled automatically.</p>
 <p>Point <code>tls_cert_file</code> and <code>tls_key_file</code> at a
 PEM certificate chain and key (for example Let's Encrypt's
-<code>fullchain.pem</code> and <code>privkey.pem</code>). Without them
-a self-signed certificate is created in <code>&lt;data_dir&gt;/tls/</code>,
-which browsers will warn about. Restart after renewing a
-certificate.</p>
+<code>fullchain.pem</code> and <code>privkey.pem</code>). Restart after
+renewing a certificate.</p>
+<p>Without them, zerverg creates a local certificate authority in
+<code>&lt;data_dir&gt;/tls/</code> (<code>ca.crt</code>,
+<code>ca.key</code>) and has it sign a server certificate on every start,
+valid for localhost, the loopback IPs, this machine's name and any
+<code>tls_hosts</code>. Trust <code>ca.crt</code> once on each machine
+(the README lists the commands per system and browser) and the warnings
+go away for good.</p>
 
 </body>
 </html>

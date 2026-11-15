@@ -1,6 +1,7 @@
 //! Expands `<zv-entries>` placeholders in page content into entry
 //! lists. Attributes: `kind` (post|page, default post), `tag`,
-//! `limit`. Example: `<zv-entries tag="zig" limit="5"></zv-entries>`.
+//! `limit`, and `view="cards"` for image cards instead of a list.
+//! Example: `<zv-entries tag="zig" limit="5"></zv-entries>`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -24,12 +25,13 @@ pub fn expand(
     var rest = html;
     while (html_scan.findTag(rest, open_tag)) |tag| {
         try w.writeAll(rest[0..tag.start]);
-        try fragments.writeEntryList(
-            w,
-            entries,
-            filterOf(tag.text),
-            "zv-entries",
-        );
+        const filter = filterOf(tag.text);
+        const view = html_scan.attrValue(tag.text, "view") orelse "";
+        if (std.mem.eql(u8, view, "cards")) {
+            try fragments.writeEntryCards(w, entries, filter);
+        } else {
+            try fragments.writeEntryList(w, entries, filter, "zv-entries");
+        }
         rest = rest[tag.end..];
         if (std.ascii.startsWithIgnoreCase(rest, close_tag)) {
             rest = rest[close_tag.len..];

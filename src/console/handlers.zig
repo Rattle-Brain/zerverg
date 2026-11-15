@@ -20,10 +20,12 @@ const js = "text/javascript; charset=utf-8";
 
 const assets = [_]Asset{
     embed("console.css", css),
+    embed("theme.js", js),
     embed("core.js", js),
     embed("views.js", js),
     embed("editor.js", js),
     embed("write.js", js),
+    embed("themes.js", js),
 };
 
 fn embed(comptime name: []const u8, content_type: []const u8) Asset {

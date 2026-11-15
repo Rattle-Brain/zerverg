@@ -22,6 +22,10 @@ pub const Meta = struct {
     layout: ?[]const u8 = null,
     /// Comma separated.
     tags: []const u8 = "",
+    /// One or two sentences for cards, feeds and search engines.
+    description: []const u8 = "",
+    /// Cover image URL, usually `media:name.jpg`.
+    image: []const u8 = "",
 };
 
 pub const Error = error{ InvalidKind, InvalidDate };
@@ -56,6 +60,10 @@ pub fn apply(meta: *Meta, key: []const u8, value: []const u8) Error!void {
         meta.layout = value;
     } else if (eql(key, "tags")) {
         meta.tags = value;
+    } else if (eql(key, "description")) {
+        meta.description = value;
+    } else if (eql(key, "image")) {
+        meta.image = value;
     }
 }
 

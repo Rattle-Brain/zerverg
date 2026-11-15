@@ -27,6 +27,19 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
     b.step("run", "Run zerverg").dependOn(&run_cmd.step);
 
+    // `zig build dev`: no auth, plain HTTP, 127.0.0.1, ./dev-data.
+    const dev = b.addRunArtifact(exe);
+    dev.setCwd(b.path("."));
+    dev.addArgs(&.{ "serve", "--dev", "--data", "dev-data" });
+    b.step("dev", "Run a development server (no auth!)").dependOn(&dev.step);
+
+    // `zig build staging`: real logins and TLS, ./staging-data.
+    const staging = b.addRunArtifact(exe);
+    staging.setCwd(b.path("."));
+    staging.addArgs(&.{ "serve", "--config", "deploy/zerverg.staging.zon" });
+    b.step("staging", "Run a staging server (auth + TLS)")
+        .dependOn(&staging.step);
+
     const tests = b.addTest(.{ .root_module = exe_module });
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);

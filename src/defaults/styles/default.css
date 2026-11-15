@@ -557,3 +557,39 @@ pre:hover .zv-copy,
 .card > :last-child { margin-bottom: 0; }
 
 .center { text-align: center; }
+
+/* ---------------------------------------------------------------- */
+/* entry cards (<post-cards/> and <zv-entries view="cards">)        */
+/* ---------------------------------------------------------------- */
+
+.zv-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 0 0 1.1em;
+  padding: 0;
+  list-style: none;
+}
+
+.zv-card-link {
+  display: block;
+  height: 100%;
+  background: var(--bg-alt);
+  outline: 1px solid var(--line);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.zv-card-link:hover { outline-color: var(--accent-dim); }
+
+.zv-card-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.zv-card-body { display: grid; gap: 4px; padding: 10px 14px 14px; }
+.zv-card-body time { color: var(--fg-dim); font-size: 0.85rem; }
+.zv-card-title { color: var(--fg-bright); }
+.zv-card-text { color: var(--fg-dim); font-size: 0.9rem; }

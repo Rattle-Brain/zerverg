@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  zerverg "newsletter" starter theme: one calm column made for
+  reading, with past issues listed under the front page.
+-->
+<layout kind="single" favicon="media:zerverg-logo.svg" lang="en">
+
+  <header>
+    <site-title/>
+    <tagline>A letter every other week. Short, honest, unhurried.</tagline>
+    <nav>
+      <link href="/">Latest</link>
+      <page-links/>
+    </nav>
+  </header>
+
+  <main/>
+
+  <home>
+    <section title="Past issues">
+      <recent-posts count="12"/>
+    </section>
+  </home>
+
+  <footer>
+    <section title="Subscribe">
+      <text>New letters arrive by e-mail. Reply to any of them;
+        a person reads every answer.</text>
+      <raw>&lt;p class="zv-actions"&gt;&lt;a class="zv-button" href="mailto:hello@example.com?subject=Subscribe"&gt;Subscribe by e-mail&lt;/a&gt;&lt;/p&gt;</raw>
+    </section>
+    <text>Written by hand, published with zerverg.</text>
+  </footer>
+
+</layout>

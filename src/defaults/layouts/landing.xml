@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  zerverg "landing" starter theme, for a product, a shop or a
+  project page.
+
+  The front page opens with a hero and featured entries as cards.
+  Tag entries (e.g. `tags: featured`) and set `tag="featured"` on
+  <post-cards> to choose what is shown.
+-->
+<layout kind="single" favicon="media:zerverg-logo.svg" lang="en">
+
+  <header>
+    <logo src="media:zerverg-logo.svg" alt="" size="36"/>
+    <site-title/>
+    <nav>
+      <page-links/>
+      <link href="/search">Search</link>
+    </nav>
+  </header>
+
+  <home>
+    <section title="Make something people want to visit.">
+      <text>A fast, private website you fully own. Write in Markdown,
+        restyle everything, publish in a second.</text>
+      <raw>&lt;p class="zv-actions"&gt;&lt;a class="zv-button" href="#featured"&gt;See what's new&lt;/a&gt;
+        &lt;a class="zv-button zv-button-quiet" href="/docs"&gt;Read the docs&lt;/a&gt;&lt;/p&gt;</raw>
+    </section>
+    <section title="Featured">
+      <raw>&lt;span id="featured"&gt;&lt;/span&gt;</raw>
+      <post-cards count="3"/>
+    </section>
+  </home>
+
+  <main/>
+
+  <footer>
+    <section title="Elsewhere">
+      <text>Questions? Write to hello@example.com</text>
+    </section>
+    <section title="Latest">
+      <recent-posts count="3"/>
+    </section>
+    <text>Built with zerverg.</text>
+  </footer>
+
+</layout>

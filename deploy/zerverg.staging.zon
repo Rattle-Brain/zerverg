@@ -1,0 +1,43 @@
+// Staging: the real thing, on your own machines. Real logins, real
+// TLS, the same limits as production; only the certificate comes from
+// zerverg's local certificate authority instead of a public one.
+//
+//   zig build staging          (or: zerverg serve --config <this file>)
+//
+// Site:    https://localhost:7443   (http://...:7080 redirects there)
+// Console: https://localhost:9080   user admin / password admin; you
+//          must choose a new password on the first login.
+//
+// Browsers warn until you trust <data_dir>/tls/ca.crt once; see
+// "trusting the local certificate" in the README. Paths are relative
+// to the directory zerverg is started from (the repo root for
+// `zig build staging`).
+.{
+    .listen_address = "0.0.0.0",
+    .http_port = 7080,
+    .https_port = 7443,
+    .data_dir = "staging-data",
+
+    // Reachable from other machines on your network. Use "127.0.0.1"
+    // to keep the console on this machine only.
+    .admin_listen_address = null,
+    .admin_port = 9080,
+
+    // Password login. Empty hash = the console-managed password,
+    // which starts as "admin" and must be changed on first login.
+    .auth_method = .password,
+    .admin_user = "admin",
+    .admin_password_hash = "",
+
+    // Native TLS with the local certificate authority. Add the names
+    // or IPs other machines use to reach this one, e.g.
+    // .tls_hosts = .{ "staging.lan", "192.168.1.20" },
+    .tls = true,
+    .tls_hosts = .{},
+
+    .session_ttl_s = 28800,
+    .login_max_failures = 5,
+    .login_lockout_s = 900,
+    .rate_limit_per_s = 20,
+    .rate_limit_burst = 120,
+}

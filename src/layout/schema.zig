@@ -23,6 +23,8 @@ pub const Component = enum {
     text,
     search,
     @"recent-posts",
+    @"post-cards",
+    home,
     raw,
 };
 
@@ -51,7 +53,7 @@ fn specOf(component: Component) Spec {
             .content = .components,
             .allowed = &.{ "kind", "favicon", "lang" },
         },
-        .header, .footer, .sidebar => .{ .content = .components },
+        .header, .footer, .sidebar, .home => .{ .content = .components },
         .section => .{ .content = .components, .allowed = &.{"title"} },
         .nav => .{ .content = .links },
         .link => .{
@@ -67,6 +69,10 @@ fn specOf(component: Component) Spec {
         .tagline, .text, .raw => .{ .content = .text },
         .search => .{ .content = .empty, .allowed = &.{"placeholder"} },
         .@"recent-posts" => .{ .content = .empty, .allowed = &.{"count"} },
+        .@"post-cards" => .{
+            .content = .empty,
+            .allowed = &.{ "count", "tag", "kind" },
+        },
         .main, .@"page-links", .@"site-title" => .{ .content = .empty },
     };
 }
@@ -160,16 +166,29 @@ fn validateValues(element: xml.Element, component: Component) Error!void {
                 if (n == 0 or n > 512) return error.InvalidLayoutValue;
             }
         },
-        .@"recent-posts" => if (element.attr("count")) |count| {
-            const n = std.fmt.parseInt(u8, count, 10) catch
-                return error.InvalidLayoutValue;
-            if (n == 0 or n > 50) return error.InvalidLayoutValue;
+        .@"recent-posts", .@"post-cards" => {
+            if (element.attr("count")) |count| try validateCount(count);
+            if (element.attr("kind")) |kind| {
+                if (!eql(kind, "post") and !eql(kind, "page")) {
+                    return error.InvalidLayoutValue;
+                }
+            }
         },
         else => {},
     }
     if (element.attr("favicon")) |url| {
         if (!isSafeUrl(url)) return error.InvalidLayoutValue;
     }
+}
+
+fn validateCount(count: []const u8) Error!void {
+    const n = std.fmt.parseInt(u8, count, 10) catch
+        return error.InvalidLayoutValue;
+    if (n == 0 or n > 50) return error.InvalidLayoutValue;
+}
+
+fn eql(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, a, b);
 }
 
 /// Allows site-relative paths, media references, anchors, http(s)
