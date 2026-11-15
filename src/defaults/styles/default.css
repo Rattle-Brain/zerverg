@@ -474,7 +474,8 @@ button:active {
   margin-bottom: 1.4em;
 }
 
-.note::before {
+p.note::before,
+div.note > p:first-child::before {
   content: "!! ";
   color: var(--accent);
   font-weight: 700;
@@ -519,3 +520,40 @@ pre:hover .zv-copy,
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
 ::-webkit-scrollbar-thumb { background: var(--line); }
+
+/* ---------------------------------------------------------------- */
+/* content blocks                                                   */
+/*                                                                  */
+/* Markdown `::: name` fences become <div class="name">. These are  */
+/* the names this theme knows; any other name is yours to style.    */
+/* ---------------------------------------------------------------- */
+
+.note, .tip, .warning {
+  margin: 0 0 1.1em;
+  padding: 10px 16px;
+  background: var(--bg-alt);
+  border-left: var(--px) solid var(--accent-dim);
+}
+
+.tip { border-left-color: var(--accent); }
+.warning { border-left-color: #c9a35b; }
+.note > :last-child, .tip > :last-child, .warning > :last-child {
+  margin-bottom: 0;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 0 0 1.1em;
+}
+
+.card {
+  padding: 14px 16px;
+  background: var(--bg-alt);
+  outline: 1px solid var(--line);
+}
+
+.card > :last-child { margin-bottom: 0; }
+
+.center { text-align: center; }

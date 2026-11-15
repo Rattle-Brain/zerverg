@@ -40,7 +40,8 @@ pub fn extract(html: []const u8) Error!Meta {
     return meta;
 }
 
-fn apply(meta: *Meta, key: []const u8, value: []const u8) Error!void {
+/// Applies one `zerverg:KEY` (or front matter) field.
+pub fn apply(meta: *Meta, key: []const u8, value: []const u8) Error!void {
     if (eql(key, "slug")) {
         meta.slug = value;
     } else if (eql(key, "title")) {

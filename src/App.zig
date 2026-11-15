@@ -10,6 +10,7 @@ const ConnectionLimiter = @import("http/ConnectionLimiter.zig");
 const RateLimiter = @import("http/RateLimiter.zig");
 const Credentials = @import("auth/Credentials.zig");
 const OAuth = @import("auth/oauth/OAuth.zig");
+const tls = @import("tls/engine.zig");
 
 gpa: std.mem.Allocator,
 io: std.Io,
@@ -24,3 +25,5 @@ credentials: *Credentials,
 oauth: ?*OAuth = null,
 /// Parsed `trusted_proxies`, for `auth_method == .proxy`.
 trusted_proxies: []const std.Io.net.IpAddress = &.{},
+/// Set when native TLS is on (`config.tls`).
+tls_identity: ?*tls.Identity = null,

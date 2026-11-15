@@ -31,15 +31,28 @@ const snippets = [_]File{
     .{ .name = "terminal", .data = @embedFile("snippets/terminal.js") },
 };
 
-const entries = [_]File{
-    .{ .name = "index", .data = @embedFile("posts/index.html") },
-    .{ .name = "docs", .data = @embedFile("posts/docs.html") },
-    .{ .name = "api", .data = @embedFile("posts/api.html") },
-    .{ .name = "hello-world", .data = @embedFile("posts/hello-world.html") },
-    .{
-        .name = "under-the-hood",
-        .data = @embedFile("posts/under-the-hood.html"),
-    },
+const Entry = struct {
+    name: []const u8,
+    source: posts.Source,
+};
+
+fn html(name: []const u8, comptime path: []const u8) Entry {
+    return .{ .name = name, .source = .{
+        .text = @embedFile(path),
+        .format = .html,
+    } };
+}
+
+const entries = [_]Entry{
+    html("index", "posts/index.html"),
+    html("docs", "posts/docs.html"),
+    html("api", "posts/api.html"),
+    html("hello-world", "posts/hello-world.html"),
+    html("under-the-hood", "posts/under-the-hood.html"),
+    .{ .name = "writing-in-markdown", .source = .{
+        .text = @embedFile("posts/writing-in-markdown.md"),
+        .format = .markdown,
+    } },
 };
 
 const media_files = [_]File{
@@ -67,7 +80,7 @@ pub fn seedIfFresh(store: *Store, arena: Allocator) !void {
     try seedLibrary(store, arena, .layouts, &layouts);
     try seedLibrary(store, arena, .styles, &styles);
     try seedLibrary(store, arena, .snippets, &snippets);
-    for (entries) |file| _ = try posts.put(store, file.name, file.data);
+    for (entries) |e| _ = try posts.put(store, e.name, e.source);
     for (media_files) |file| try media.put(store, arena, file.name, file.data);
     try site_state.write(store, arena, default_state);
 }
@@ -86,13 +99,14 @@ fn seedLibrary(
 test "default content is valid" {
     const schema = @import("../layout/schema.zig");
     const validate = @import("../content/validate.zig");
-    const meta = @import("../content/meta.zig");
+    const entry = @import("../content/entry.zig");
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     _ = try schema.parseLayout(arena_state.allocator(), default_layout);
-    for (entries) |file| {
-        try validate.text(file.data);
-        _ = try meta.extract(file.data);
+    for (entries) |e| {
+        try validate.text(e.source.text);
+        _ = try entry.metaOf(e.source);
+        _ = try entry.bodyHtml(arena_state.allocator(), e.source);
     }
     for (media_files) |file| {
         const media_type = media.mediaTypeOf(file.name).?;

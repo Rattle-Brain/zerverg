@@ -5,41 +5,68 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>zerverg console</title>
-<link rel="stylesheet" href="/console.css">
-<script src="/console.js" defer></script>
+<link rel="stylesheet" href="/console/console.css">
+<script src="/console/core.js" defer></script>
+<script src="/console/views.js" defer></script>
+<script src="/console/editor.js" defer></script>
+<script src="/console/write.js" defer></script>
 </head>
 <body>
 
-<div id="topbar">
-  <span id="brand">zerverg <small>console</small></span>
-  <span id="userbox" hidden>
-    logged in as <b id="username"></b>
-    | <a href="#/account">account</a>
-    | <a id="sitelink" href="/" target="_blank" rel="noopener">view site</a>
-    | <a href="#" id="logout">log out</a>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar" id="topbar" hidden>
+  <a class="brand" href="#/posts">
+    <span class="brand-mark" aria-hidden="true">z</span>
+    <span>zerverg <small>console</small></span>
+  </a>
+  <span class="spacer"></span>
+  <a class="btn ghost" id="site-link" href="/" target="_blank"
+     rel="noopener">View site <span aria-hidden="true">↗</span></a>
+  <span class="user-chip">
+    <span class="avatar" id="avatar" aria-hidden="true"></span>
+    <span class="name" id="user-name"></span>
   </span>
+  <button class="btn" type="button" id="logout">Log out</button>
+</header>
+
+<div class="shell" id="shell">
+  <nav class="sidebar" id="sidebar" aria-label="Sections" hidden>
+    <a class="btn primary" href="#/write">
+      <span aria-hidden="true">+</span> New post
+    </a>
+    <div class="nav-group">
+      <h2>Content</h2>
+      <a class="nav-link" href="#/posts"><span class="icon"
+        aria-hidden="true">▤</span>Posts &amp; pages</a>
+      <a class="nav-link" href="#/media"><span class="icon"
+        aria-hidden="true">▣</span>Media</a>
+    </div>
+    <div class="nav-group">
+      <h2>Design</h2>
+      <a class="nav-link" href="#/styles"><span class="icon"
+        aria-hidden="true">◐</span>Styles</a>
+      <a class="nav-link" href="#/layouts"><span class="icon"
+        aria-hidden="true">▦</span>Layouts</a>
+      <a class="nav-link" href="#/snippets"><span class="icon"
+        aria-hidden="true">{}</span>Snippets</a>
+    </div>
+    <div class="nav-group">
+      <h2>Settings</h2>
+      <a class="nav-link" href="#/site"><span class="icon"
+        aria-hidden="true">⚙</span>Site</a>
+      <a class="nav-link" href="#/account"><span class="icon"
+        aria-hidden="true">◉</span>Account</a>
+    </div>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <noscript><p>The console needs JavaScript. The REST API under
+    <code>/api/v1</code> works without it.</p></noscript>
+  </main>
 </div>
 
-<div id="tabs" hidden>
-  <a href="#/posts">Posts &amp; pages</a>
-  <a href="#/layouts">Layouts</a>
-  <a href="#/styles">Styles</a>
-  <a href="#/snippets">Snippets</a>
-  <a href="#/media">Media</a>
-  <a href="#/site">Site settings</a>
-</div>
-
-<div id="flash" hidden></div>
-
-<div id="content">
-  <noscript><p>The console needs JavaScript. The REST API under
-  <code>/api/v1</code> works without it.</p></noscript>
-</div>
-
-<div id="footer">
-  zerverg admin console &middot; everything here goes through
-  <code>/api/v1</code>
-</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 </body>
 </html>

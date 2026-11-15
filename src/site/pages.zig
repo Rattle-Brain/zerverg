@@ -11,6 +11,7 @@ const posts = @import("../store/posts.zig");
 const library = @import("../store/library.zig");
 const site_state = @import("../store/site_state.zig");
 const meta = @import("../content/meta.zig");
+const entry_mod = @import("../content/entry.zig");
 const xml = @import("../layout/xml.zig");
 const schema = @import("../layout/schema.zig");
 const layout_render = @import("../layout/render.zig");
@@ -31,29 +32,47 @@ const Page = struct {
 pub fn home(ctx: *Context) !Response {
     const store = ctx.app.store;
     const entries = try posts.list(store, ctx.arena);
-    const html = posts.read(store, ctx.arena, home_slug) catch |err|
+    const source = posts.read(store, ctx.arena, home_slug) catch |err|
         switch (err) {
             error.NotFound => return postList(ctx, entries),
             else => return err,
         };
-    const entry_meta = try meta.extract(html);
-    const main_html = try entryMain(ctx.arena, html, entry_meta, entries);
-    return render(ctx, entries, .{
-        .layout_name = entry_meta.layout,
-        .title = "",
-        .main_html = main_html,
-    });
+    return renderEntry(ctx, entries, source, "");
 }
 
 pub fn entry(ctx: *Context, slug: []const u8) !Response {
     const store = ctx.app.store;
-    const html = try posts.read(store, ctx.arena, slug);
+    const source = try posts.read(store, ctx.arena, slug);
     const entries = try posts.list(store, ctx.arena);
-    const entry_meta = try meta.extract(html);
-    const main_html = try entryMain(ctx.arena, html, entry_meta, entries);
+    return renderEntry(ctx, entries, source, slug);
+}
+
+/// Renders unsaved `source` exactly as the site would.
+pub fn preview(ctx: *Context, source: posts.Source) !Response {
+    const entries = try posts.list(ctx.app.store, ctx.arena);
+    return renderEntry(ctx, entries, source, "preview");
+}
+
+/// `fallback_title` is used when the entry has none; "" keeps the
+/// site title alone (home page).
+fn renderEntry(
+    ctx: *Context,
+    entries: []const posts.Summary,
+    source: posts.Source,
+    fallback_title: []const u8,
+) !Response {
+    const entry_meta = try entry_mod.metaOf(source);
+    const body = try entry_mod.bodyHtml(ctx.arena, source);
+    const main_html = try entryMain(ctx.arena, body, entry_meta, entries);
+    const title = if (fallback_title.len == 0)
+        ""
+    else if (entry_meta.title.len > 0)
+        entry_meta.title
+    else
+        fallback_title;
     return render(ctx, entries, .{
         .layout_name = entry_meta.layout,
-        .title = if (entry_meta.title.len > 0) entry_meta.title else slug,
+        .title = title,
         .main_html = main_html,
     });
 }
@@ -102,11 +121,11 @@ fn postList(ctx: *Context, entries: []const posts.Summary) !Response {
 /// Posts get a title header; pages render their body as-is.
 fn entryMain(
     arena: Allocator,
-    html: []const u8,
+    body_html: []const u8,
     entry_meta: meta.Meta,
     entries: []const posts.Summary,
 ) ![]const u8 {
-    const body = try entries_tag.expand(arena, meta.bodyOf(html), entries);
+    const body = try entries_tag.expand(arena, body_html, entries);
     var out: Writer.Allocating = .init(arena);
     const w = &out.writer;
     try w.writeAll("<article class=\"zv-entry\">\n");

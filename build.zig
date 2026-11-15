@@ -10,6 +10,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const tls = b.dependency("tls", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_module.addImport("tls", tls.module("tls"));
+
     const exe = b.addExecutable(.{
         .name = "zerverg",
         .root_module = exe_module,

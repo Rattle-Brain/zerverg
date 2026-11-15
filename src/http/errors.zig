@@ -29,6 +29,7 @@ fn statusOf(err: anyerror) http.Status {
         error.InvalidJson,
         error.InvalidTitle,
         error.MissingSlug,
+        error.InvalidFormat,
         error.TooManySnippets,
         error.InvalidContent,
         error.InvalidXml,

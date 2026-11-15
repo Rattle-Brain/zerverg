@@ -16,6 +16,7 @@ pub const usage =
     \\  --listen <addr>  Listen address (overrides config)
     \\  --port <port>    Public site port (default 7080)
     \\  --admin-port <p> Admin console port (default 9080)
+    \\  --tls            Native HTTPS (self-signed unless configured)
     \\  --dev            Development mode: NO AUTH, binds 127.0.0.1
     \\
 ;
@@ -26,6 +27,7 @@ pub const ServeOptions = struct {
     listen_address: ?[]const u8 = null,
     port: ?u16 = null,
     admin_port: ?u16 = null,
+    tls: bool = false,
     dev: bool = false,
 };
 
@@ -61,6 +63,10 @@ fn parseServe(args: []const []const u8) ParseError!ServeOptions {
             options.dev = true;
             continue;
         }
+        if (eql(flag, "--tls")) {
+            options.tls = true;
+            continue;
+        }
         if (i + 1 >= args.len) return error.MissingValue;
         i += 1;
         const value = args[i];
@@ -90,8 +96,9 @@ fn eql(a: []const u8, b: []const u8) bool {
 }
 
 test "parse serve with flags" {
-    const cmd = try parse(&.{ "serve", "--dev", "--port", "8000" });
+    const cmd = try parse(&.{ "serve", "--dev", "--port", "8000", "--tls" });
     try std.testing.expect(cmd.serve.dev);
+    try std.testing.expect(cmd.serve.tls);
     try std.testing.expectEqual(@as(?u16, 8000), cmd.serve.port);
 }
 

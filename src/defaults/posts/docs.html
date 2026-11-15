@@ -49,10 +49,12 @@ site. Delete or replace any of it; it is never re-created once
 
 <h2 id="console">admin console and authentication</h2>
 
-<p>The console is a plain web interface over the same REST API: browse
-entries, layouts, styles, snippets and media, upload files, roll back
-versions, change site settings. It has no editor on purpose: content is
-uploaded as files.</p>
+<p>The console is a web interface over the same REST API. <em>Write</em>
+is a writing view with a live preview rendered through the real layout
+and stylesheet; images can be uploaded, pasted or dropped into the text.
+Styles, layouts and snippets can be edited in the browser (every save is
+a new version) or duplicated to experiment safely. Files can still be
+uploaded as before.</p>
 
 <p>It runs on its own port (<code>admin_port</code>, default 9080)
 because a different port is a different browser origin: snippets on the
@@ -168,8 +170,9 @@ auth.json        console-managed password hash (0600)</code></pre>
 
 <h2 id="content">content: posts and pages</h2>
 
-<p>An entry is an HTML file. Only the <code>&lt;body&gt;</code> is
-rendered; metadata travels in <code>&lt;meta&gt;</code> tags:</p>
+<p>An entry is an HTML or a Markdown file. In HTML, only the
+<code>&lt;body&gt;</code> is rendered; metadata travels in
+<code>&lt;meta&gt;</code> tags:</p>
 
 <pre><code>&lt;title&gt;My post&lt;/title&gt;
 &lt;meta name="zerverg:date"   content="2026-11-15"&gt;
@@ -177,6 +180,30 @@ rendered; metadata travels in <code>&lt;meta&gt;</code> tags:</p>
 &lt;meta name="zerverg:tags"   content="zig,web"&gt;
 &lt;meta name="zerverg:layout" content="wide"&gt;     &lt;!-- optional --&gt;
 &lt;meta name="zerverg:slug"   content="my-post"&gt;  &lt;!-- for POST --&gt;</code></pre>
+
+<p>In Markdown, the same fields go in a header between
+<code>---</code> lines:</p>
+
+<pre><code>---
+title: My post
+date: 2026-11-15
+tags: zig, web
+kind: post
+---
+
+Text in **Markdown**.
+
+::: note
+A fenced block becomes &lt;div class="note"&gt;: the stylesheet
+decides how it looks. Any name works.
+:::</code></pre>
+
+<p>Markdown covers headings, emphasis, links, images
+(<code>![alt](media:photo.jpg)</code>), lists, quotes, code, tables and
+raw HTML. Upload Markdown with <code>?format=md</code>, a
+<code>text/markdown</code> Content-Type, or just a leading
+<code>---</code> header. A slug has one file: saving it in the other
+format replaces it.</p>
 
 <ul>
   <li><strong>posts</strong> show a title header, appear in lists and
@@ -359,6 +386,18 @@ then command-line flags. See <code>deploy/zerverg.example.zon</code>.</p>
 
 <p class="note">Behind a reverse proxy every client shares the proxy's
 IP. Raise or disable the per-IP limits in that case.</p>
+
+<h2>HTTPS</h2>
+<p>Start with <code>--tls</code> or set <code>.tls = true</code>. The
+site is then served on <code>https_port</code> (7443), the console uses
+HTTPS on its own port, and <code>http_port</code> only redirects to
+HTTPS. HSTS and <code>Secure</code> cookies are enabled automatically.</p>
+<p>Point <code>tls_cert_file</code> and <code>tls_key_file</code> at a
+PEM certificate chain and key (for example Let's Encrypt's
+<code>fullchain.pem</code> and <code>privkey.pem</code>). Without them
+a self-signed certificate is created in <code>&lt;data_dir&gt;/tls/</code>,
+which browsers will warn about. Restart after renewing a
+certificate.</p>
 
 </body>
 </html>

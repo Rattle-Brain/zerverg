@@ -21,6 +21,9 @@ pub fn Route(comptime Handler: type) type {
         body: BodyLimit = .none,
         /// Reachable while the factory password is still active.
         before_password_change: bool = false,
+        /// Log an `audit:` line for mutating requests. Off for
+        /// requests that change nothing, like previews.
+        audit: bool = true,
     };
 }
 

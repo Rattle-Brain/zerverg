@@ -1,11 +1,14 @@
-//! TCP listener and per-connection HTTP/1.1 loop.
+//! TCP listeners and the per-connection HTTP/1.1 loop.
 //!
 //! Two listeners: the public site and the admin console (see
-//! auth/guard.zig for why they are separate origins).
+//! auth/guard.zig for why they are separate origins). With native TLS
+//! both speak HTTPS, and a third plain listener on `http_port` only
+//! redirects to the site's HTTPS port.
 //!
 //! Defences applied here, before any routing:
 //!   - global and per-client connection caps
-//!   - a per-connection lifetime watchdog (slowloris, idle keep-alive)
+//!   - a per-connection lifetime watchdog (slowloris, idle keep-alive,
+//!     stalled TLS handshakes)
 //!   - a cap on requests per connection
 //!   - per-client request rate limiting
 
@@ -19,49 +22,90 @@ const Response = @import("Response.zig");
 const client_key = @import("client_key.zig");
 const headers = @import("headers.zig");
 const errors = @import("errors.zig");
+const https_redirect = @import("https_redirect.zig");
 const guard = @import("../auth/guard.zig");
+const tls = @import("../tls/engine.zig");
 const dispatch = @import("../routes.zig").dispatch;
 
+/// Cleartext buffers; the socket buffers are sized for TLS records.
 const recv_buffer_len = 16 * 1024;
 const send_buffer_len = 16 * 1024;
 
 const Counter = std.atomic.Value(u32);
 
+const Mode = union(enum) {
+    plain,
+    tls,
+    /// Plain HTTP that answers everything with a redirect to HTTPS
+    /// on this port.
+    redirect: u16,
+};
+
 const Listener = struct {
     surface: guard.Surface,
+    mode: Mode,
     server: Io.net.Server,
     active: Counter = .init(0),
+
+    fn open(
+        io: Io,
+        surface: guard.Surface,
+        mode: Mode,
+        host: []const u8,
+        port: u16,
+    ) !Listener {
+        const address = try Io.net.IpAddress.parse(host, port);
+        const server = try address.listen(io, .{ .reuse_address = true });
+        const scheme = if (mode == .tls) "https" else "http";
+        std.log.info("{t}: listening on {s}://{f}{s}", .{
+            surface,
+            scheme,
+            address,
+            if (mode == .redirect) " (redirects to HTTPS)" else "",
+        });
+        return .{ .surface = surface, .mode = mode, .server = server };
+    }
 };
 
 /// Serves the public site and the admin console until cancelled.
 pub fn run(app: *App) !void {
     const io = app.io;
     const config = &app.config;
-    var public: Listener = .{
-        .surface = .public,
-        .server = try listen(io, config.listen_address, config.http_port),
-    };
-    defer public.server.deinit(io);
-    var admin: Listener = .{
-        .surface = .admin,
-        .server = try listen(
-            io,
-            config.adminListenAddress(),
-            config.admin_port,
-        ),
-    };
-    defer admin.server.deinit(io);
+    const secure = app.tls_identity != null;
+    const mode: Mode = if (secure) .tls else .plain;
+    const site_port = if (secure) config.https_port else config.http_port;
 
+    var public: Listener = try .open(
+        io,
+        .public,
+        mode,
+        config.listen_address,
+        site_port,
+    );
+    defer public.server.deinit(io);
+    var admin: Listener = try .open(
+        io,
+        .admin,
+        mode,
+        config.adminListenAddress(),
+        config.admin_port,
+    );
+    defer admin.server.deinit(io);
     var admin_loop = try io.concurrent(acceptLoop, .{ app, &admin });
     defer admin_loop.cancel(io) catch {};
-    try acceptLoop(app, &public);
-}
 
-fn listen(io: Io, host: []const u8, port: u16) !Io.net.Server {
-    const address = try Io.net.IpAddress.parse(host, port);
-    const server = try address.listen(io, .{ .reuse_address = true });
-    std.log.info("listening on http://{f}", .{address});
-    return server;
+    if (!secure) return acceptLoop(app, &public);
+    var redirect: Listener = try .open(
+        io,
+        .public,
+        .{ .redirect = config.https_port },
+        config.listen_address,
+        config.http_port,
+    );
+    defer redirect.server.deinit(io);
+    var redirect_loop = try io.concurrent(acceptLoop, .{ app, &redirect });
+    defer redirect_loop.cancel(io) catch {};
+    try acceptLoop(app, &public);
 }
 
 fn acceptLoop(app: *App, listener: *Listener) Io.Cancelable!void {
@@ -116,26 +160,66 @@ fn serveConnection(
     var watchdog = io.concurrent(shutdownAfter, watchdog_args) catch null;
     defer if (watchdog) |*w| w.cancel(io) catch {};
 
-    var recv_buffer: [recv_buffer_len]u8 = undefined;
-    var send_buffer: [send_buffer_len]u8 = undefined;
-    var reader = stream.reader(io, &recv_buffer);
-    var writer = stream.writer(io, &send_buffer);
-    var server = http.Server.init(&reader.interface, &writer.interface);
-
-    const max_requests = app.config.max_requests_per_connection;
-    var served: u32 = 0;
-    while (served < max_requests) : (served += 1) {
-        var raw = server.receiveHead() catch return;
-        const exchange: Exchange = .{
-            .app = app,
-            .raw = &raw,
-            .peer = peer,
-            .surface = listener.surface,
-            .last = served + 1 == max_requests,
-        };
-        if (!exchange.handle()) return;
+    var socket_in: [tls.input_buffer_len]u8 = undefined;
+    var socket_out: [tls.output_buffer_len]u8 = undefined;
+    var reader = stream.reader(io, &socket_in);
+    var writer = stream.writer(io, &socket_out);
+    const connection: Connection = .{
+        .app = app,
+        .peer = peer,
+        .listener = listener,
+    };
+    if (listener.mode == .tls) {
+        connection.serveTls(&reader.interface, &writer.interface);
+    } else {
+        connection.serve(&reader.interface, &writer.interface);
     }
 }
+
+/// One accepted client, past the connection limits.
+const Connection = struct {
+    app: *App,
+    peer: Io.net.IpAddress,
+    listener: *Listener,
+
+    /// Handshakes, then serves over the decrypted stream.
+    fn serveTls(self: Connection, input: *Io.Reader, output: *Io.Writer) void {
+        const io = self.app.io;
+        var recv_buffer: [recv_buffer_len]u8 = undefined;
+        var send_buffer: [send_buffer_len]u8 = undefined;
+        if (!tls.startsWithHandshake(input)) return;
+        var session: tls.Session = undefined;
+        session.handshake(
+            io,
+            self.app.tls_identity.?,
+            input,
+            output,
+            &recv_buffer,
+            &send_buffer,
+        ) catch return;
+        defer session.close();
+        self.serve(&session.reader.interface, &session.writer.interface);
+    }
+
+    /// Request loop over a cleartext stream.
+    fn serve(self: Connection, input: *Io.Reader, output: *Io.Writer) void {
+        var server = http.Server.init(input, output);
+        const max_requests = self.app.config.max_requests_per_connection;
+        var served: u32 = 0;
+        while (served < max_requests) : (served += 1) {
+            var raw = server.receiveHead() catch return;
+            const exchange: Exchange = .{
+                .app = self.app,
+                .raw = &raw,
+                .peer = self.peer,
+                .surface = self.listener.surface,
+                .mode = self.listener.mode,
+                .last = served + 1 == max_requests,
+            };
+            if (!exchange.handle()) return;
+        }
+    }
+};
 
 fn shutdownAfter(
     io: Io,
@@ -152,6 +236,7 @@ const Exchange = struct {
     raw: *http.Server.Request,
     peer: Io.net.IpAddress,
     surface: guard.Surface,
+    mode: Mode,
     /// Last request allowed on this connection.
     last: bool,
 
@@ -173,12 +258,25 @@ const Exchange = struct {
             self.send(arena, "/", response, false) catch {};
             return false;
         };
-        const response = dispatch(app, arena, &request, self.surface);
+        const response = self.respond(arena, &request);
         const keep_alive = !self.last and self.raw.head.keep_alive and
             request.canKeepAlive();
         self.send(arena, request.path, response, keep_alive) catch
             return false;
         return keep_alive;
+    }
+
+    fn respond(
+        self: Exchange,
+        arena: std.mem.Allocator,
+        request: *Request,
+    ) Response {
+        const port = switch (self.mode) {
+            .redirect => |port| port,
+            else => return dispatch(self.app, arena, request, self.surface),
+        };
+        return https_redirect.respond(arena, request, port) catch |err|
+            errors.toResponse(arena, err);
     }
 
     fn send(

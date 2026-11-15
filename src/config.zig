@@ -116,8 +116,17 @@ pub const Config = struct {
         "object-src 'none'; base-uri 'self'; form-action 'self'; " ++
         "frame-ancestors 'none'",
     /// Set when the site is served over HTTPS (e.g. behind a TLS
-    /// proxy): adds HSTS and marks the session cookie Secure.
+    /// proxy): adds HSTS and marks the session cookie Secure. Implied
+    /// by `tls`.
     https: bool = false,
+
+    /// Native TLS: the site is served on `https_port`, the console on
+    /// `admin_port` with TLS, and `http_port` only redirects to HTTPS.
+    tls: bool = false,
+    /// PEM certificate chain (leaf first) and private key. Both empty:
+    /// a self-signed pair is generated in <data_dir>/tls/.
+    tls_cert_file: []const u8 = "",
+    tls_key_file: []const u8 = "",
 
     /// Only settable through the `--dev` CLI flag, never from a file.
     dev_mode: bool = false,
@@ -138,6 +147,7 @@ pub const LoadError = error{
     MissingOAuthAllowlist,
     MissingTrustedProxies,
     InvalidTrustedProxy,
+    IncompleteTlsFiles,
 } || Allocator.Error;
 
 /// Loads the config file. A missing file is only an error when the
@@ -198,6 +208,8 @@ pub fn applyEnvironment(
     if (env.get("ZERVERG_DATA_DIR")) |v| config.data_dir = v;
     if (env.get("ZERVERG_LISTEN")) |v| config.listen_address = v;
     if (env.get("ZERVERG_ADMIN_LISTEN")) |v| config.admin_listen_address = v;
+    if (env.get("ZERVERG_TLS_CERT")) |v| config.tls_cert_file = v;
+    if (env.get("ZERVERG_TLS_KEY")) |v| config.tls_key_file = v;
 }
 
 pub fn validate(config: Config) LoadError!void {
@@ -208,6 +220,10 @@ pub fn validate(config: Config) LoadError!void {
     };
     for (limits) |limit| {
         if (limit > config.max_body_bytes) return error.LimitAboveMaxBody;
+    }
+    const has_cert = config.tls_cert_file.len > 0;
+    if (has_cert != (config.tls_key_file.len > 0)) {
+        return error.IncompleteTlsFiles;
     }
     switch (config.auth_method) {
         .password => {},
@@ -277,6 +293,15 @@ test "parse overrides only given fields" {
     try std.testing.expectEqual(@as(u16, 9000), config.http_port);
     try std.testing.expectEqual(@as(u16, 10), config.history_keep);
     try std.testing.expect(!config.dev_mode);
+}
+
+test "tls needs both or neither PEM file" {
+    try validate(.{ .tls = true });
+    try validate(.{ .tls_cert_file = "c.pem", .tls_key_file = "k.pem" });
+    try std.testing.expectError(
+        error.IncompleteTlsFiles,
+        validate(.{ .tls_cert_file = "c.pem" }),
+    );
 }
 
 test "oauth validation refuses open allowlists" {

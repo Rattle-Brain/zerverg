@@ -67,6 +67,7 @@ const api_routes = [_]Route{
     admin(.GET, "/api/v1/posts/:slug", posts_api.get),
     route(.admin, .PUT, "/api/v1/posts/:slug", posts_api.put, .text),
     admin(.DELETE, "/api/v1/posts/:slug", posts_api.remove),
+    quiet(route(.admin, .POST, "/api/v1/preview", posts_api.preview, .text)),
 
     admin(.GET, "/api/v1/media", media_api.list),
     route(.admin, .PUT, "/api/v1/media/:name", media_api.put, .media),
@@ -78,10 +79,12 @@ const api_routes = [_]Route{
 
 /// The console shell is static and holds no data; everything it shows
 /// comes from the authenticated API.
+/// The active stylesheet and media are served here too, so previews
+/// look like the site.
 const console_routes = [_]Route{
     public(.GET, "/", console.index),
-    public(.GET, "/console.css", console.stylesheet),
-    public(.GET, "/console.js", console.script),
+    public(.GET, "/console/:file", console.asset),
+    public(.GET, "/assets/style.css", site.style),
     public(.GET, "/media/:name", site.mediaFile),
 };
 
@@ -122,6 +125,12 @@ fn route(
         .handler = handler,
         .body = body,
     };
+}
+
+fn quiet(r: Route) Route {
+    var copy = r;
+    copy.audit = false;
+    return copy;
 }
 
 fn early(r: Route) Route {
@@ -170,7 +179,7 @@ pub fn dispatch(
             errors.toResponse(arena, err),
     };
     if (result == .matched and found.?.access == .admin and
-        request.isMutating())
+        found.?.audit and request.isMutating())
     {
         audit(&ctx, response);
     }

@@ -20,7 +20,7 @@
 
 ![zig 0.16](https://img.shields.io/badge/zig-0.16-1c1e21?style=flat-square&labelColor=23262a&color=9ec29a)
 ![database: none](https://img.shields.io/badge/database-none-1c1e21?style=flat-square&labelColor=23262a&color=9ec29a)
-![dependencies: 0](https://img.shields.io/badge/dependencies-0-1c1e21?style=flat-square&labelColor=23262a&color=9ec29a)
+![dependencies: 1](https://img.shields.io/badge/dependencies-1-1c1e21?style=flat-square&labelColor=23262a&color=9ec29a)
 ![license](https://img.shields.io/badge/license-Apache--2.0%20%2B%20Commons%20Clause-1c1e21?style=flat-square&labelColor=23262a&color=9ec29a)
 
 </div>
@@ -73,6 +73,29 @@ Configuration lives in `/etc/zerverg/zerverg.zon` (see
 [`deploy/zerverg.example.zon`](deploy/zerverg.example.zon)). Precedence:
 defaults → config file → environment (`ZERVERG_*`) → command-line flags.
 
+### https
+
+```console
+$ ./zig-out/bin/zerverg serve --tls
+```
+
+With `--tls` (or `.tls = true`) the site moves to **https on 7443**, the
+console speaks https on 9080, and 7080 only redirects to https. HSTS and
+`Secure` cookies switch on by themselves. TLS 1.3 only.
+
+Without a certificate, zerverg makes a self-signed one in
+`<data_dir>/tls/` (browsers will warn). For a public site, point it at a
+real one, e.g. from Let's Encrypt:
+
+```zon
+.tls = true,
+.tls_cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem",
+.tls_key_file = "/etc/letsencrypt/live/example.com/privkey.pem",
+```
+
+(or `ZERVERG_TLS_CERT` / `ZERVERG_TLS_KEY`). Certificates are read at
+startup: restart after renewing.
+
 > [!WARNING]
 > `--dev` turns authentication **off** on both ports and binds to
 > `127.0.0.1`. Never expose a dev instance to a network you don't trust.
@@ -85,9 +108,14 @@ defaults → config file → environment (`ZERVERG_*`) → command-line flags.
   <img src="docs/console.png" alt="the zerverg admin console" width="760">
 </p>
 
-A plain, no-frills web interface over the REST API: browse posts,
-layouts, styles, snippets and media, upload files, view versions and roll
-back, switch the active theme. Files only, no editor, by design.
+A web interface over the REST API, light or dark with your system:
+
+- **Write**: title, date, tags and text in one place, Markdown or HTML,
+  with a live preview rendered through the real layout and stylesheet.
+  Drop or paste images straight into the text.
+- **Design**: edit styles, layouts and snippets in the browser. Every
+  save is a new version; duplicate one to experiment off the live site.
+- **Media**, **site settings**, uploads, version history and rollback.
 
 It listens on **its own port** (`admin_port`, 9080). A different port is
 a different browser origin, so JavaScript snippets on the public site can
@@ -133,8 +161,8 @@ else. Forgot it? Stop the server, delete `auth.json`, start again.
 ## ■ how it works
 
 ```
-request ─► layout (xml) ─► <main/> ◄─ entry (html) ◄─ <zv-entries>, media:
-                │                                      expanded on render
+request ─► layout (xml) ─► <main/> ◄─ entry (html|md) ◄─ <zv-entries>, media:
+                │                                         expanded on render
                 ▼
            style (css) + snippets (js) ─► page
 ```
@@ -146,7 +174,7 @@ request ─► layout (xml) ─► <main/> ◄─ entry (html) ◄─ <zv-entrie
 ├── layouts/<name>/<version>.xml + HEAD    versioned, rollback-able
 ├── styles/<name>/<version>.css  + HEAD
 ├── snippets/<name>/<version>.js + HEAD
-├── posts/<slug>.html                      posts and pages
+├── posts/<slug>.html | <slug>.md          posts and pages
 ├── media/<file>                           images, video
 ├── site.json                              title, active layout/style/snippets
 └── auth.json                              console-managed password (0600)
@@ -241,7 +269,11 @@ On by default, tunable in the config file:
   bound to the browser, nonce, ID token signature (RS256/ES256 only)
   and claims checked, mandatory allowlist, HTTPS-only providers
 - **headers** CSP, nosniff, frame denial, referrer, permissions and
-  cross-origin policies; HSTS + `Secure` cookies with `.https = true`
+  cross-origin policies; HSTS + `Secure` cookies with `.tls` or
+  `.https = true`
+- **tls** native TLS 1.3 (ECDSA or RSA certificates), plaintext
+  clients on the TLS ports dropped at once, handshakes bound by the
+  connection lifetime
 - **uploads** UTF-8 text only, layouts schema-validated, media checked
   against file signatures, scripted SVGs rejected, media streamed
 - **paths** no dot segments or control bytes, 2 KiB max
@@ -263,19 +295,21 @@ $ zig build test
 src/
 ├── main.zig  cli.zig  config.zig  routes.zig
 ├── http/      server, request, router, limits, headers
+├── tls/       TLS engine wrapper, certificates, self-signed generator
 ├── auth/      passwords, sessions, lockout, proxy headers
 │   └── oauth/ sign in with Google / GitHub / OpenID Connect
 ├── store/     files, versioned libraries, posts, media
+├── content/   metadata, front matter, markdown, upload checks
 ├── layout/    xml parser, schema, renderer
 ├── site/      public pages, search
 ├── api/       REST handlers
-├── console/   the admin console (html, css, js)
+├── console/   the admin console (html, css, js: core, views, editors)
 └── defaults/  the first-boot site
 ```
 
 House rules: functions ≤ 60 lines, lines ≤ 80 columns, `zig fmt`.
 
-**roadmap** `[x]` admin console · `[ ]` native TLS · `[ ]` docker image
+**roadmap** `[x]` admin console · `[x]` native TLS · `[ ]` docker image
 
 ---
 

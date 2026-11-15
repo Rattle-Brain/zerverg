@@ -72,7 +72,10 @@ pub fn session(ctx: *Context) !Response {
         .auth_method = @tagName(app.config.auth_method),
         .password_source = @tagName(source),
         .dev_mode = app.config.dev_mode,
-        .public_port = app.config.http_port,
+        .public_port = if (app.config.tls)
+            app.config.https_port
+        else
+            app.config.http_port,
         .providers = try providerList(ctx),
     });
 }

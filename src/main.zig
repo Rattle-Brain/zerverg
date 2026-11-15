@@ -17,6 +17,7 @@ const seed = @import("defaults/seed.zig");
 const Credentials = @import("auth/Credentials.zig");
 const OAuth = @import("auth/oauth/OAuth.zig");
 const proxy_auth = @import("auth/proxy_auth.zig");
+const tls_identity = @import("tls/identity.zig");
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -82,7 +83,16 @@ fn runServe(init: std.process.Init, options: cli.ServeOptions) !void {
         .connections = undefined,
         .rate_limiter = undefined,
     };
-    try serveWithLimits(&app);
+    try serveWithTls(&app, init.arena.allocator());
+}
+
+/// Loads the certificate when native TLS is on, then serves.
+fn serveWithTls(app: *App, arena: std.mem.Allocator) !void {
+    if (!app.config.tls) return serveWithLimits(app);
+    var identity = try tls_identity.load(app.gpa, arena, app.io, app.config);
+    defer identity.deinit(app.gpa);
+    app.tls_identity = &identity;
+    try serveWithLimits(app);
 }
 
 /// Creates the per-client limiters and session store, then serves.
@@ -149,6 +159,8 @@ fn loadConfig(
     if (options.data_dir) |v| config.data_dir = v;
     if (options.port) |v| config.http_port = v;
     if (options.admin_port) |v| config.admin_port = v;
+    if (options.tls) config.tls = true;
+    if (config.tls) config.https = true;
     try config_mod.validate(config);
     return config;
 }
@@ -220,4 +232,12 @@ test {
     _ = @import("auth/oauth/OAuth.zig");
     _ = @import("auth/proxy_auth.zig");
     _ = @import("defaults/seed.zig");
+    _ = @import("http/https_redirect.zig");
+    _ = @import("tls/der.zig");
+    _ = @import("tls/pem.zig");
+    _ = @import("tls/self_signed.zig");
+    _ = @import("tls/identity.zig");
+    _ = @import("content/markdown.zig");
+    _ = @import("content/front_matter.zig");
+    _ = @import("content/entry.zig");
 }

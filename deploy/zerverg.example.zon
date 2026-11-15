@@ -3,7 +3,7 @@
 .{
     .listen_address = "0.0.0.0",
     .http_port = 7080, // the public site
-    .https_port = 7443, // native TLS lands in a later milestone
+    .https_port = 7443, // the site, when .tls = true
     .data_dir = "/var/lib/zerverg",
 
     // Admin console. Its own port = its own browser origin, so site
@@ -80,8 +80,18 @@
     .rate_limit_per_s = 20,
     .rate_limit_burst = 120,
 
-    // Set to true when the site is reached over HTTPS (e.g. through a
-    // TLS-terminating proxy): enables HSTS and Secure cookies.
+    // Native TLS (TLS 1.3). The site moves to https_port, the console
+    // uses TLS on admin_port, and http_port only redirects to HTTPS.
+    // Implies .https = true. Both files empty: a self-signed pair is
+    // generated in <data_dir>/tls/ (browsers warn). Certificates are
+    // read at startup; restart after renewing. Env overrides:
+    // ZERVERG_TLS_CERT, ZERVERG_TLS_KEY.
+    .tls = false,
+    // .tls_cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem",
+    // .tls_key_file = "/etc/letsencrypt/live/example.com/privkey.pem",
+
+    // Set to true when the site is reached over HTTPS through a
+    // TLS-terminating proxy: enables HSTS and Secure cookies.
     .https = false,
 
     // Content-Security-Policy for public pages. The default only
