@@ -14,6 +14,7 @@
 **[ [how it works](#-how-it-works) ]** &nbsp;
 **[ [api](#-api) ]** &nbsp;
 **[ [hardening](#-hardening) ]** &nbsp;
+**[ [contributing](#-contributing) ]** &nbsp;
 **[ [license](#-license) ]**
 
 <br>
@@ -31,7 +32,7 @@
 ~/zerverg $ cat README
 ```
 
-**zerverg** is a small, database-free website engine written in Zig.
+**Zerverg** is a small, database-free website engine written in Zig.
 A website is four kinds of plain files, and nothing else:
 
 | file     | decides                                  | lives in     |
@@ -52,9 +53,20 @@ everything, and roll back when you break something.
   <sub><code>> the default theme, as seen on first boot</code></sub>
 </p>
 
+> [!WARNING]
+> **About AI usage**: I used the assistance of AI tools to complete this project.
+> The design, code cleanliness rules, decisions, functionalities and such
+> are all done by me, plus the code, sometimes. AI just sped up the creation
+> of an otherwise months-long project. If this is a deal-breaker to you, well,
+> fair enough. This is not for you.
+
+> [!NOTE]
+> **Contributions properly done will be accepted regardless of AI usage**
+> (see [contributing](#-contributing)).
+
 ---
 
-## ■ quick start
+## ■ Quick start
 
 Two ready-made ways to run it from a checkout:
 
@@ -72,7 +84,7 @@ Two ready-made ways to run it from a checkout:
 Both start from the default site, which *is* the manual (`/docs`,
 `/api`). Delete the data directory to start over.
 
-### dev
+### Dev
 
 ```console
 $ zig build dev
@@ -85,7 +97,7 @@ info: admin: listening on http://127.0.0.1:9080
 > Dev mode turns authentication **off** on both ports. It only binds to
 > `127.0.0.1`; never expose it to a network you don't trust.
 
-### staging
+### Staging
 
 ```console
 $ zig build staging
@@ -109,7 +121,7 @@ To reach staging from other machines, add the names or IPs they use to
 `.tls_hosts` in the staging config (e.g. `"staging.lan"`,
 `"192.168.1.20"`) and restart.
 
-### trusting the local certificate
+### Trusting the local certificate
 
 Without a certificate file, zerverg creates its **own small certificate
 authority** the first time it starts with TLS (`<data_dir>/tls/ca.crt`
@@ -133,7 +145,7 @@ certificate the same way. Anyone holding `ca.key` can impersonate any
 site to machines that trust it, so keep `ca.key` private (it is created
 `0600`) and never trust a CA you didn't create yourself.
 
-### production
+### Production
 
 Install the binary, copy
 [`deploy/zerverg.example.zon`](deploy/zerverg.example.zon) to
@@ -156,7 +168,7 @@ off and set `.https = true`.
 
 ---
 
-## ■ admin console
+## ■ Admin console
 
 <p align="center">
   <img src="docs/console.png" alt="the zerverg admin console in its dark theme: the Write view with a live preview" width="760">
@@ -189,7 +201,7 @@ keep 9080 on your LAN.
 | `.oauth` | **Sign in with Google, GitHub** or any OpenID Connect provider (GitLab, Keycloak, Authentik, ...), limited to an allowlist |
 | `.proxy` | the user an authenticating proxy (Authelia, oauth2-proxy, ...) names in a header, from `trusted_proxies` only |
 
-### sign in with Google / GitHub
+### Sign in with Google / GitHub
 
 ```zon
 .auth_method = .oauth,
@@ -219,7 +231,7 @@ else. Forgot it? Stop the server, delete `auth.json`, start again.
 
 ---
 
-## ■ how it works
+## ■ How it works
 
 ```
 request ─► layout (xml) ─► <main/> ◄─ entry (html|md) ◄─ <zv-entries>, media:
@@ -228,7 +240,7 @@ request ─► layout (xml) ─► <main/> ◄─ entry (html|md) ◄─ <zv-ent
            style (css) + snippets (js) ─► page
 ```
 
-### data directory
+### Data directory
 
 ```
 /var/lib/zerverg/
@@ -243,7 +255,7 @@ request ─► layout (xml) ─► <main/> ◄─ entry (html|md) ◄─ <zv-ent
 
 Back it up with `tar`. Version it with `git`. Every write is atomic.
 
-### a layout
+### A layout
 
 ```xml
 <layout kind="sidebar-right" favicon="media:logo.svg">
@@ -270,7 +282,7 @@ component renders with a `zv-*` class for the stylesheet to target.
 `<post-cards>` shows entries as cards with their cover `image` and
 `description`.
 
-### an entry
+### An entry
 
 In Markdown (`hello-world.md`):
 
@@ -306,7 +318,7 @@ The page with slug `index` is the home page.
 
 ---
 
-## ■ api
+## ■ API
 
 Everything goes through `/api/v1`. On the console port (9080): session
 cookie (password or "sign in with ..." login), HTTP Basic, or proxy headers. On
@@ -337,7 +349,7 @@ Cookie-authenticated writes must send `X-Requested-With: zerverg`.
 
 ---
 
-## ■ hardening
+## ■ Hardening
 
 On by default, tunable in the config file:
 
@@ -372,7 +384,7 @@ On by default, tunable in the config file:
 
 ---
 
-## ■ hacking
+## ■ Hacking
 
 ```console
 $ zig build test
@@ -402,7 +414,35 @@ House rules: functions ≤ 60 lines, lines ≤ 80 columns, `zig fmt`.
 
 ---
 
-## ■ license
+## ■ Contributing
+
+Contributions are welcome, **with or without AI assistance**. How the
+code was written doesn't matter; what it is does. If a change is well
+done, follows this project's standards and is a good contribution
+overall, it will be accepted.
+
+The standards:
+
+- functions ≤ 60 lines, lines ≤ 80 columns, `zig fmt`
+- small modules with one clear job and descriptive names; follow the
+  existing layout (see [hacking](#-hacking))
+- `zig build test` passes, and new behaviour comes with tests
+- no new dependencies without discussing it first
+- the security defaults stay intact (origin split, CSP, validation on
+  upload); a change there needs a stated reason
+- console JavaScript: no frameworks and no build step; build the DOM
+  with `textContent`, never `innerHTML`
+- docs follow the code: README, the built-in `/docs` page and the
+  example config when behaviour or settings change
+
+For anything bigger than a fix, open an issue first so we can agree on
+the approach. Whatever tools you use, you are responsible for what you
+submit and should be able to explain it. Contributions are accepted
+under the project's license (Apache-2.0 with the Commons Clause).
+
+---
+
+## ■ License
 
 **Apache-2.0 with the Commons Clause.** See [`LICENSE`](LICENSE) and
 [`NOTICE`](NOTICE).
