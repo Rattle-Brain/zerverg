@@ -1,0 +1,25 @@
+// Copy to /etc/zerverg/zerverg.zon. Every field is optional; the
+// values below are the defaults unless noted.
+.{
+    .listen_address = "0.0.0.0",
+    .http_port = 7080,
+    .https_port = 7443, // TLS lands in a later milestone
+    .data_dir = "/var/lib/zerverg",
+
+    .admin_user = "admin",
+    // REQUIRED outside --dev. Generate with:
+    //   printf '%s\n' 'your password' | zerverg hash-password
+    // or pass it via the ZERVERG_ADMIN_PASSWORD_HASH env variable.
+    .admin_password_hash = "",
+    .session_ttl_s = 28800,
+    .login_max_failures = 5,
+    .login_lockout_s = 900,
+
+    .max_connections = 256,
+    .connection_timeout_s = 60,
+    .max_text_upload_bytes = 2097152, // posts, layouts, styles, snippets
+    .max_image_bytes = 10485760,
+    .max_video_bytes = 67108864,
+    .max_media_total_bytes = 2147483648,
+    .history_keep = 10, // versions kept per layout/style/snippet
+}
