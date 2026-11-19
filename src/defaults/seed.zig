@@ -67,22 +67,38 @@ const entries = [_]Entry{
     } },
 };
 
-const media_files = [_]File{
-    .{
-        .name = "zerverg-logo.svg",
-        .data = @embedFile("media/zerverg-logo.svg"),
-    },
-    .{
-        .name = "zerverg-banner.svg",
-        .data = @embedFile("media/zerverg-banner.svg"),
-    },
-    .{ .name = "cover-hello.svg", .data = @embedFile("media/cover-hello.svg") },
-    .{ .name = "cover-hood.svg", .data = @embedFile("media/cover-hood.svg") },
-    .{
-        .name = "cover-markdown.svg",
-        .data = @embedFile("media/cover-markdown.svg"),
-    },
+const MediaFile = struct {
+    place: media.Place,
+    data: []const u8,
 };
+
+/// The logo and banner are site-wide; covers sit in their post's
+/// own folder.
+const media_files = [_]MediaFile{
+    siteMedia("zerverg-logo.svg"),
+    siteMedia("zerverg-banner.svg"),
+    postMedia("hello-world", "cover.svg", "cover-hello.svg"),
+    postMedia("under-the-hood", "cover.svg", "cover-hood.svg"),
+    postMedia("writing-in-markdown", "cover.svg", "cover-markdown.svg"),
+};
+
+fn siteMedia(comptime name: []const u8) MediaFile {
+    return .{
+        .place = .{ .name = name },
+        .data = @embedFile("media/" ++ name),
+    };
+}
+
+fn postMedia(
+    slug: []const u8,
+    name: []const u8,
+    comptime file: []const u8,
+) MediaFile {
+    return .{
+        .place = .{ .folder = .{ .kind = .post, .slug = slug }, .name = name },
+        .data = @embedFile("media/" ++ file),
+    };
+}
 
 pub const default_state: site_state.SiteState = .{
     .title = "zerverg",
@@ -98,8 +114,8 @@ pub fn seedIfFresh(store: *Store, arena: Allocator) !void {
     try seedLibrary(store, arena, .layouts, &layouts);
     try seedLibrary(store, arena, .styles, &styles);
     try seedLibrary(store, arena, .snippets, &snippets);
-    for (entries) |e| _ = try posts.put(store, e.name, e.source);
-    for (media_files) |file| try media.put(store, arena, file.name, file.data);
+    for (entries) |e| _ = try posts.put(store, .posts, e.name, e.source);
+    for (media_files) |file| try media.put(store, arena, file.place, file.data);
     try site_state.write(store, arena, default_state);
 }
 
@@ -129,7 +145,7 @@ test "default content is valid" {
         _ = try entry.bodyHtml(arena_state.allocator(), e.source);
     }
     for (media_files) |file| {
-        const media_type = media.mediaTypeOf(file.name).?;
+        const media_type = media.mediaTypeOf(file.place.name).?;
         try validate.media(media_type, file.data);
     }
 }

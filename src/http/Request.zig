@@ -161,10 +161,16 @@ pub fn canKeepAlive(self: *const Request) bool {
 
 /// Named route parameter, set by the router. Asserts it exists.
 pub fn param(self: *const Request, name: []const u8) []const u8 {
+    return self.optionalParam(name) orelse unreachable;
+}
+
+/// Named route parameter, for handlers shared by routes where only
+/// some patterns capture it.
+pub fn optionalParam(self: *const Request, name: []const u8) ?[]const u8 {
     for (self.params[0..self.param_count]) |p| {
         if (std.mem.eql(u8, p.name, name)) return p.value;
     }
-    unreachable;
+    return null;
 }
 
 /// Raw (undecoded) query parameter value.

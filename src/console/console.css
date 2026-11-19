@@ -19,6 +19,8 @@
   --ok-soft: #e5f5eb;
   --warn: #8a5b00;
   --warn-soft: #fff4dc;
+  --draft: #7c3aed;
+  --draft-soft: #f1e9ff;
   --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
   --shadow-lg: 0 12px 32px rgb(16 24 40 / 18%);
   --radius: 10px;
@@ -54,6 +56,8 @@
   --ok-soft: #173024;
   --warn: #f0c062;
   --warn-soft: #33290f;
+  --draft: #c4a5ff;
+  --draft-soft: #2b2045;
   --shadow: 0 1px 2px rgb(0 0 0 / 40%);
   --shadow-lg: 0 16px 40px rgb(0 0 0 / 55%);
   color-scheme: dark;
@@ -79,6 +83,8 @@
     --ok-soft: #173024;
     --warn: #f0c062;
     --warn-soft: #33290f;
+    --draft: #c4a5ff;
+    --draft-soft: #2b2045;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%);
     --shadow-lg: 0 16px 40px rgb(0 0 0 / 55%);
     color-scheme: dark;
@@ -576,6 +582,7 @@ a.title:hover { color: var(--accent); }
 
 .badge.on { background: var(--ok-soft); color: var(--ok); }
 .badge.accent { background: var(--accent-soft); color: var(--accent); }
+.badge.draft { background: var(--draft-soft); color: var(--draft); }
 
 .empty {
   padding: 48px 24px;
@@ -597,7 +604,59 @@ a.title:hover { color: var(--accent); }
 .callout.info { background: var(--accent-soft); color: var(--text); }
 .callout.error { background: var(--danger-soft); color: var(--danger); }
 
+/* drafts: violet, so they never read as a warning or an error */
+.callout.draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  border-left: 4px solid var(--draft);
+  background: var(--draft-soft);
+  color: var(--text);
+}
+
+.callout.draft strong { color: var(--draft); }
+.callout.draft .btn { margin-left: auto; }
+
 /* media grid */
+.media-group h2 { margin: 24px 0 12px; color: var(--muted); }
+
+/* collapsible media sections: posts / pages, then one per entry */
+details.fold {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+details.fold details.fold {
+  margin: 0 12px 12px;
+  background: var(--surface-2);
+}
+
+details.fold > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 48px;
+  padding: 8px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+details.fold > summary::-webkit-details-marker { display: none; }
+
+details.fold > summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+
+details.fold[open] > summary::before { content: "▾"; }
+details.fold > summary h2 { margin: 0; }
+details.fold > summary .btn { margin-left: auto; }
+details.fold > .media-grid { padding: 4px 16px 16px; }
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));

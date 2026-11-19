@@ -2,6 +2,7 @@
 // place, with a live preview rendered by the server through the real
 // layout and stylesheet. Saves Markdown (with a front matter header)
 // or HTML (with zerverg:* meta tags), exactly as a file upload would.
+// Work is saved as a draft; publishing moves the draft onto the site.
 "use strict";
 
 (function () {
@@ -135,31 +136,45 @@
   // media in the text
   // ---------------------------------------------------------------
 
-  function mediaSnippet(name, format) {
-    const alt = name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
-    if (ZV.isVideo(name)) {
-      return "\n<video src=\"media:" + name + "\" controls></video>\n";
+  function mediaSnippet(path, format) {
+    const alt = path.replace(/^.*\//, "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+    if (ZV.isVideo(path)) {
+      return "\n<video src=\"media:" + path + "\" controls></video>\n";
     }
-    return format === "markdown" ? "![" + alt + "](media:" + name + ")"
-      : "<img src=\"media:" + name + "\" alt=\"" + alt + "\">";
+    return format === "markdown" ? "![" + alt + "](media:" + path + ")"
+      : "<img src=\"media:" + path + "\" alt=\"" + alt + "\">";
   }
 
-  async function insertMedia(state, area, files) {
+  /// The entry's own media folder: "posts/<slug>/" or "pages/<slug>/".
+  function mediaFolder(ui) {
+    const slug = ui.slug.value.trim();
+    if (ZV.checkSlug(slug)) return null;
+    return (ui.kind.value === "page" ? "pages/" : "posts/") + slug + "/";
+  }
+
+  async function insertMedia(state, ui, files) {
+    const folder = mediaFolder(ui);
+    if (!folder) {
+      ZV.toast("Give the entry a title first: its media is kept in a folder " +
+        "named after its address.", "error");
+      return;
+    }
     for (const file of files) {
       if (!ZV.isImage(file.name) && !ZV.isVideo(file.name)) {
         ZV.toast("\"" + file.name + "\" isn't an image or video.", "error");
         continue;
       }
       try {
-        const name = await ZV.uploadMedia(file, state.media);
-        ZV.insertText(area, mediaSnippet(name, state.format));
+        const path = await ZV.uploadMedia(file, state.media, folder);
+        ZV.insertText(ui.area, mediaSnippet(path, state.format));
       } catch (err) {
         ZV.toast(file.name + ": " + err.message, "error");
       }
     }
   }
 
-  function acceptFiles(state, area) {
+  function acceptFiles(state, ui) {
+    const area = ui.area;
     area.addEventListener("dragover", (e) => {
       if (!e.dataTransfer.types.includes("Files")) return;
       e.preventDefault();
@@ -170,13 +185,13 @@
       area.classList.remove("dragging");
       if (!e.dataTransfer.files.length) return;
       e.preventDefault();
-      insertMedia(state, area, [...e.dataTransfer.files]);
+      insertMedia(state, ui, [...e.dataTransfer.files]);
     });
     area.addEventListener("paste", (e) => {
       const files = [...e.clipboardData.files];
       if (!files.length) return;
       e.preventDefault();
-      insertMedia(state, area, files);
+      insertMedia(state, ui, files);
     });
   }
 
@@ -232,28 +247,39 @@
     try { localStorage.setItem("zv-format", format); } catch (_) { /* private mode */ }
   }
 
-  /// `#/write` (new) or `#/write/<slug>`
+  /// `#/write` (new) or `#/write/<slug>`. Opens the entry's draft
+  /// when there is one, else the published entry.
   ZV.views.write = async function writeView(slug) {
-    let entries, layouts, media, text = "";
+    let entries, drafts, layouts, media, text = "";
     try {
-      [entries, layouts, media] = await Promise.all(
-        ["/posts", "/layouts", "/media"].map((p) => api("GET", p)));
-      if (slug) text = await api("GET", "/posts/" + encodeURIComponent(slug));
+      [entries, drafts, layouts, media] = await Promise.all(
+        ["/posts", "/drafts", "/layouts", "/media"].map((p) => api("GET", p)));
     } catch (err) {
       return ZV.failed(err);
     }
-    const existing = slug ? entries.find((e) => e.slug === slug) : null;
+    const draft = slug ? drafts.find((e) => e.slug === slug) : null;
+    const live = slug ? entries.find((e) => e.slug === slug) : null;
+    const shelf = draft ? "/drafts/" : "/posts/";
+    try {
+      if (slug) text = await api("GET", shelf + encodeURIComponent(slug));
+    } catch (err) {
+      return ZV.failed(err);
+    }
+    const existing = draft || live;
     const format = existing ? existing.format : preferredFormat();
     const entry = slug ? parseSource(text, format)
       : { title: "", date: today(), tags: "", kind: "post", layout: "", body: "", extra: [] };
     buildEditor({
       slug: slug || "",
+      savedTitle: (entry.title || "").trim(),
       isNew: !slug,
+      hasDraft: Boolean(draft),
+      isLive: Boolean(live),
       format,
       entry,
-      slugs: new Set(entries.map((e) => e.slug)),
+      slugs: new Set(entries.concat(drafts).map((e) => e.slug)),
       layouts,
-      media: new Set(media.map((m) => m.name)),
+      media: new Set(media.map((m) => m.path)),
     });
   };
 
@@ -270,26 +296,31 @@
     });
     const refresh = () => {
       if (state.isNew) ui.status.set(true, "Not saved yet");
-      else ui.status.set(dirty());
-      ui.viewLink.hidden = state.isNew;
+      else ui.status.set(dirty(), dirty() ? "" : state.hasDraft ? "Draft saved" : "Published");
+      ui.viewLink.hidden = !state.isLive;
+      ui.draftNote.sync();
       preview.schedule();
     };
-    const save = ZV.button("Save", async () => {
-      if (!(await ZV.busy(save, saveEntry(state, ui, compose)))) return;
-      saved = compose();
-      refresh();
-    }, "primary");
+    const saveWith = (publish) => {
+      const button = ZV.button(publish ? "Publish" : "Save draft", async () => {
+        if (!(await ZV.busy(button, saveEntry(state, ui, compose, publish)))) return;
+        saved = compose();
+        refresh();
+      }, publish ? "primary" : "");
+      return button;
+    };
+    const saves = [saveWith(false), saveWith(true)];
     ui.onChange = refresh;
-    ZV.editorKeys(ui.area, () => save.click());
+    ZV.editorKeys(ui.area, () => saves[0].click());
     ui.title.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        save.click();
+        saves[0].click();
       }
     });
     ZV.unsaved = dirty;
-    ZV.show(layoutWrite(state, ui, preview, save));
-    acceptFiles(state, ui.area);
+    ZV.show(layoutWrite(state, ui, preview, saves));
+    acceptFiles(state, ui);
     refresh();
     preview.now();
     (state.isNew ? ui.title : ui.area).focus({ preventScroll: true });
@@ -335,7 +366,35 @@
     ui.viewLink = ZV.link("View ↗", ZV.siteUrl(state.slug), "ghost",
       { target: "_blank", rel: "noopener" });
     ui.formats = formatSwitch(state, ui, changed);
+    ui.draftNote = draftNote(state);
     return ui;
+  }
+
+  /// Says the text is a draft, with a way to throw it away.
+  function draftNote(state) {
+    const note = el("div", { class: "callout draft", role: "status" });
+    const discard = () => ZV.removeEntry({
+      what: state.isLive ? "this draft" : "the draft \"" + state.slug + "\"",
+      path: "/drafts/" + state.slug,
+      // The live entry keeps using the media; only a lone draft offers it.
+      folders: state.isLive ? [] : ZV.mediaFolders([...state.media], state.slug),
+      then: () => {
+        ZV.unsaved = null;
+        if (state.isLive) ZV.views.write(state.slug);
+        else ZV.go("#/posts");
+      },
+    });
+    note.sync = () => {
+      note.hidden = !state.hasDraft;
+      note.replaceChildren(
+        el("strong", { text: "Draft." }),
+        el("span", { text: state.isLive
+          ? "The site shows the published version until you publish this."
+          : "Not on the site until you publish it." }),
+        ZV.button(state.isLive ? "Discard draft" : "Delete draft", discard,
+          "small ghost danger"));
+    };
+    return note;
   }
 
   function formatSwitch(state, ui, changed) {
@@ -359,19 +418,21 @@
     return box;
   }
 
-  function layoutWrite(state, ui, preview, save) {
+  function layoutWrite(state, ui, preview, saves) {
     const details = el("details", { class: "more" }, [
       el("summary", { text: "More options" }),
       el("div", { class: "form-grid" }, [
         ZV.field("Address", ui.slug, state.isNew
           ? "The entry's URL path. Filled in from the title; " +
             "letters, digits, - and _."
-          : "Fixed after the first save."),
+          : "Follows the title: saving a new title moves the entry, its " +
+            "draft and media to the matching address."),
         ZV.field("Layout", ui.layout, "Leave on the site default unless " +
           "this entry needs its own."),
       ]),
     ]);
     const editPane = el("div", { class: "edit-pane" }, [
+      ui.draftNote,
       ui.title,
       el("div", { class: "meta-grid" }, [
         ZV.field("Date", ui.date), ZV.field("Tags", ui.tags, "Separate with commas."),
@@ -381,7 +442,7 @@
       el("div", { class: "card" }, [
         formatBar(state, ui.area, async () => {
           const files = await ZV.pickFiles("image/*,video/mp4,video/webm,video/ogg", true);
-          insertMedia(state, ui.area, files);
+          insertMedia(state, ui, files);
         }),
         ui.area,
       ]),
@@ -392,7 +453,7 @@
       title: state.isNew ? "New post" : "Edit",
       back: { href: "#/posts", label: "Posts & pages" },
       actions: [ui.status, paneSwitch(grid), previewToggle(grid), ui.formats,
-        ui.viewLink, save],
+        ui.viewLink].concat(saves),
       wide: true,
     }, [grid]);
   }
@@ -435,7 +496,8 @@
       ["**bold**  *italic*", "emphasis"],
       ["# Title  ## Section", "headings"],
       ["[text](https://…)", "a link"],
-      ["![description](media:photo.jpg)", "an image from Media"],
+      ["![description](media:photo.jpg)", "a site-wide image from Media"],
+      ["![description](media:posts/slug/photo.jpg)", "one of this entry's own"],
       ["- item  /  1. item", "lists"],
       ["> text", "a quote"],
       ["| a | b |  then  |---|---|", "a table"],
@@ -453,8 +515,61 @@
   // saving
   // ---------------------------------------------------------------
 
-  async function saveEntry(state, ui, compose) {
+  /// Stores the text as a draft, then with `publish` moves the
+  /// draft onto the site in one step. A changed title then moves the
+  /// entry to its new address. Resolves false when nothing was saved
+  /// or the view was rebuilt.
+  async function saveEntry(state, ui, compose, publish) {
     const slug = ui.slug.value.trim();
+    if (!(await slugAllowed(state, ui, slug))) return false;
+    try {
+      const format = state.format === "markdown" ? "md" : "html";
+      await api("PUT", "/drafts/" + slug, compose(), { format });
+      if (publish) await api("POST", "/drafts/" + slug + "/publish");
+    } catch (err) {
+      ZV.failed(err);
+      return false;
+    }
+    ZV.toast(!publish ? "Draft saved. It isn't on the site until you publish it."
+      : state.isNew || !state.isLive ? "Published at /" + slug + "." : "Published.");
+    const title = ui.title.value.trim();
+    if (state.isNew) {
+      state.isNew = false;
+      state.savedTitle = title;
+      state.slug = slug;
+      state.slugs.add(slug);
+      ui.slug.readOnly = true;
+      ui.viewLink.href = ZV.siteUrl(slug);
+      history.replaceState(null, "", "#/write/" + encodeURIComponent(slug));
+    }
+    state.hasDraft = !publish;
+    state.isLive = state.isLive || publish;
+    if (title === state.savedTitle) return true;
+    state.savedTitle = title;
+    return !(await followTitle(state, title));
+  }
+
+  /// Moves a retitled entry, with its draft and media, to the address
+  /// its new title gives. The server rewrites the media references,
+  /// so the editor reloads the moved text. Resolves true when it did.
+  /// The home page keeps its address whatever its title.
+  async function followTitle(state, title) {
+    const to = ZV.slugify(title);
+    if (!to || to === state.slug || state.slug === "index") return false;
+    try {
+      await api("POST", "/entries/" + state.slug + "/rename", undefined, { to });
+    } catch (err) {
+      ZV.toast("Saved, but the address stays /" + state.slug + ". " + err.message, "error");
+      return false;
+    }
+    ZV.toast("Moved to /" + to + ".");
+    ZV.unsaved = null;
+    history.replaceState(null, "", "#/write/" + encodeURIComponent(to));
+    ZV.views.write(to);
+    return true;
+  }
+
+  async function slugAllowed(state, ui, slug) {
     const problem = ZV.checkSlug(slug);
     if (problem) {
       ui.slug.closest("details").open = true;
@@ -464,28 +579,11 @@
       return false;
     }
     ui.slug.removeAttribute("aria-invalid");
-    if (state.isNew && state.slugs.has(slug) && !(await ZV.confirm({
+    return !state.isNew || !state.slugs.has(slug) || ZV.confirm({
       title: "Replace /" + slug + "?",
-      message: "Another entry already uses this address. Saving replaces it.",
+      message: "Another entry or draft already uses this address. Yours will replace it.",
       action: "Replace",
       danger: true,
-    }))) return false;
-    try {
-      const format = state.format === "markdown" ? "md" : "html";
-      await api("PUT", "/posts/" + slug, compose(), { format });
-    } catch (err) {
-      ZV.failed(err);
-      return false;
-    }
-    ZV.toast(state.isNew ? "Published at /" + slug + "." : "Saved.");
-    if (state.isNew) {
-      state.isNew = false;
-      state.slug = slug;
-      state.slugs.add(slug);
-      ui.slug.readOnly = true;
-      ui.viewLink.href = ZV.siteUrl(slug);
-      history.replaceState(null, "", "#/write/" + encodeURIComponent(slug));
-    }
-    return true;
+    });
   }
 })();

@@ -44,8 +44,8 @@ pub fn home(ctx: *Context) !Response {
 
 fn homeWith(ctx: *Context, theme: ?Theme) !Response {
     const store = ctx.app.store;
-    const entries = try posts.list(store, ctx.arena);
-    const source = posts.read(store, ctx.arena, home_slug) catch |err|
+    const entries = try posts.list(store, ctx.arena, .posts);
+    const source = posts.read(store, ctx.arena, .posts, home_slug) catch |err|
         switch (err) {
             error.NotFound => return postList(ctx, entries, theme),
             else => return err,
@@ -59,14 +59,14 @@ pub fn entry(ctx: *Context, slug: []const u8) !Response {
 
 fn entryWith(ctx: *Context, slug: []const u8, theme: ?Theme) !Response {
     const store = ctx.app.store;
-    const source = try posts.read(store, ctx.arena, slug);
-    const entries = try posts.list(store, ctx.arena);
+    const source = try posts.read(store, ctx.arena, .posts, slug);
+    const entries = try posts.list(store, ctx.arena, .posts);
     return renderEntry(ctx, entries, source, slug, theme);
 }
 
 /// Renders unsaved `source` exactly as the site would.
 pub fn preview(ctx: *Context, source: posts.Source) !Response {
-    const entries = try posts.list(ctx.app.store, ctx.arena);
+    const entries = try posts.list(ctx.app.store, ctx.arena, .posts);
     return renderEntry(ctx, entries, source, "preview", null);
 }
 
@@ -106,7 +106,7 @@ fn renderEntry(
 
 pub fn search(ctx: *Context, query: []const u8) !Response {
     const store = ctx.app.store;
-    const entries = try posts.list(store, ctx.arena);
+    const entries = try posts.list(store, ctx.arena, .posts);
     var out: Writer.Allocating = .init(ctx.arena);
     const w = &out.writer;
     try w.writeAll("<h1>search</h1>\n");

@@ -45,7 +45,7 @@ fn statusOf(err: anyerror) http.Status {
         error.WeakPassword,
         error.PasswordLoginDisabled,
         => .bad_request,
-        error.PasswordManagedByConfig => .conflict,
+        error.PasswordManagedByConfig, error.NameTaken => .conflict,
         error.UriTooLong => .uri_too_long,
         error.Unauthorized => .unauthorized,
         error.Forbidden, error.PasswordChangeRequired => .forbidden,

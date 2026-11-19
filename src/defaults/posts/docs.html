@@ -162,7 +162,10 @@ with it the forced change.</p>
 styles/&lt;name&gt;/&lt;version&gt;.css  + HEAD
 snippets/&lt;name&gt;/&lt;version&gt;.js + HEAD
 posts/&lt;slug&gt;.html
-media/&lt;file&gt;
+drafts/&lt;slug&gt;.html             unpublished, never served
+media/&lt;file&gt;                   site-wide: logo, banner
+media/posts/&lt;slug&gt;/&lt;file&gt;      one post's own
+media/pages/&lt;slug&gt;/&lt;file&gt;      one page's own
 site.json        title + active layout, style, snippets
 auth.json        console-managed password hash (0600)</code></pre>
 
@@ -212,6 +215,16 @@ format replaces it.</p>
     feeds of recent posts.</li>
   <li><strong>pages</strong> render as-is and appear in the navigation
     via <code>&lt;page-links/&gt;</code>.</li>
+  <li><strong>drafts</strong> are entries saved under
+    <code>/api/v1/drafts</code> instead of <code>/api/v1/posts</code>.
+    The site never shows them; <code>POST
+    /api/v1/drafts/:slug/publish</code> moves one over the live entry
+    in a single step.</li>
+  <li><strong>renaming</strong> an entry (<code>POST
+    /api/v1/entries/:slug/rename?to=new</code>; the console does it
+    when you save an entry with a new title) moves its published file, its draft and
+    its media folders, and rewrites <code>media:</code> references to
+    them in every entry. Links to the old address are not rewritten.</li>
   <li>The page with slug <code>index</code> is the home page. Without
     one, <code>/</code> lists all posts.</li>
   <li>A page may use a different layout with
@@ -325,9 +338,15 @@ enable code you wrote or have read.</p>
 <h2 id="media">media</h2>
 
 <p>Upload images (png, jpg, gif, webp, avif, svg, ico) and videos (mp4,
-webm, ogv) and reference them as <code>media:name.ext</code>:</p>
+webm, ogv) and reference them by their path under <code>media/</code>.
+Site-wide files (a logo, a banner) sit at the top; a post or page keeps
+its own in <code>posts/&lt;slug&gt;/</code> or
+<code>pages/&lt;slug&gt;/</code>, a folder created by its first upload
+and removed with its last file. Deleting an entry leaves its media
+alone unless you ask; the console offers to delete both:</p>
 
-<pre><code>&lt;img src="media:cat.png" alt="a cat"&gt;</code></pre>
+<pre><code>&lt;img src="media:logo.svg" alt="logo"&gt;
+&lt;img src="media:posts/my-post/cat.png" alt="a cat"&gt;</code></pre>
 
 <p>Uploads are checked against their file signature, capped per type and
 by a total quota. SVGs containing scripts are rejected.</p>

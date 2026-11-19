@@ -16,6 +16,7 @@ const errors = @import("http/errors.zig");
 const Config = @import("config.zig").Config;
 const guard = @import("auth/guard.zig");
 const library = @import("store/library.zig");
+const posts = @import("store/posts.zig");
 
 const auth_api = @import("api/auth_api.zig");
 const oauth_api = @import("api/oauth_api.zig");
@@ -33,7 +34,9 @@ const BodyLimit = router.BodyLimit;
 /// JSON bodies (login, site settings).
 const small_body_bytes = 16 * 1024;
 
-const shared_api_routes = api_routes ++
+const shared_api_routes = entryRoutes(.posts) ++
+    entryRoutes(.drafts) ++
+    api_routes ++
     libraryRoutes(.layouts) ++
     libraryRoutes(.styles) ++
     libraryRoutes(.snippets);
@@ -63,17 +66,18 @@ const auth_routes = [_]Route{
 };
 
 const api_routes = [_]Route{
-    admin(.GET, "/api/v1/posts", posts_api.list),
     route(.admin, .POST, "/api/v1/posts", posts_api.create, .text),
-    admin(.GET, "/api/v1/posts/:slug", posts_api.get),
-    route(.admin, .PUT, "/api/v1/posts/:slug", posts_api.put, .text),
-    admin(.DELETE, "/api/v1/posts/:slug", posts_api.remove),
+    admin(.POST, "/api/v1/drafts/:slug/publish", posts_api.publish),
+    admin(.POST, "/api/v1/entries/:slug/rename", posts_api.rename),
     quiet(route(.admin, .POST, "/api/v1/preview", posts_api.preview, .text)),
     admin(.GET, "/api/v1/themes/:name/preview", themes_api.preview),
 
     admin(.GET, "/api/v1/media", media_api.list),
     route(.admin, .PUT, "/api/v1/media/:name", media_api.put, .media),
     admin(.DELETE, "/api/v1/media/:name", media_api.remove),
+    route(.admin, .PUT, entry_media_api, media_api.put, .media),
+    admin(.DELETE, entry_media_api, media_api.remove),
+    admin(.DELETE, "/api/v1" ++ media_folder, media_api.removeFolder),
 
     admin(.GET, "/api/v1/site", site_api.get),
     route(.admin, .PUT, "/api/v1/site", site_api.put, .small),
@@ -88,6 +92,7 @@ const console_routes = [_]Route{
     public(.GET, "/console/:file", console.asset),
     public(.GET, "/assets/style.css", site.style),
     public(.GET, "/media/:name", site.mediaFile),
+    public(.GET, entry_media, site.mediaFile),
 };
 
 /// Order matters: `/:slug` must stay last.
@@ -96,9 +101,26 @@ const public_routes = [_]Route{
     public(.GET, "/assets/style.css", site.style),
     public(.GET, "/assets/snippets/:file", site.snippet),
     public(.GET, "/media/:name", site.mediaFile),
+    public(.GET, entry_media, site.mediaFile),
     public(.GET, "/search", site.search),
     public(.GET, "/:slug", site.entry),
 };
+
+/// An entry's own media: `:folder` is `posts` or `pages`.
+const media_folder = "/media/:folder/:slug";
+const entry_media = media_folder ++ "/:name";
+const entry_media_api = "/api/v1" ++ entry_media;
+
+fn entryRoutes(comptime shelf: posts.Shelf) [4]Route {
+    const H = posts_api.Handlers(shelf);
+    const base = "/api/v1/" ++ @tagName(shelf);
+    return .{
+        admin(.GET, base, H.list),
+        admin(.GET, base ++ "/:slug", H.get),
+        route(.admin, .PUT, base ++ "/:slug", H.put, .text),
+        admin(.DELETE, base ++ "/:slug", H.remove),
+    };
+}
 
 fn libraryRoutes(comptime kind: library.Kind) [6]Route {
     const H = library_api.Handlers(kind);

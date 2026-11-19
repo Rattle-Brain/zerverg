@@ -5,7 +5,10 @@
 //!   styles/<name>/<version>.css  + HEAD
 //!   snippets/<name>/<version>.js + HEAD
 //!   posts/<slug>.html
-//!   media/<file>
+//!   drafts/<slug>.html             unpublished; never served
+//!   media/<file>                   site-wide
+//!   media/posts/<slug>/<file>      one post's own
+//!   media/pages/<slug>/<file>      one page's own
 //!   site.json
 //!
 //! One RwLock guards everything: public reads share it, admin writes
@@ -25,7 +28,7 @@ pub const Limits = struct {
 };
 
 const subdirs = [_][]const u8{
-    "layouts", "styles", "snippets", "posts", "media",
+    "layouts", "styles", "snippets", "posts", "drafts", "media",
 };
 
 io: Io,
@@ -37,6 +40,11 @@ pub fn open(io: Io, data_dir: []const u8, limits: Limits) !Store {
     const cwd = Io.Dir.cwd();
     try cwd.createDirPath(io, data_dir);
     const root = try cwd.openDir(io, data_dir, .{ .iterate = true });
+    return openDir(io, root, limits);
+}
+
+/// A store over an already open `root`, which it then owns.
+pub fn openDir(io: Io, root: Io.Dir, limits: Limits) !Store {
     for (subdirs) |name| try root.createDirPath(io, name);
     return .{ .io = io, .root = root, .limits = limits };
 }
@@ -63,4 +71,16 @@ pub fn unlockExclusive(self: *Store) void {
 
 pub fn openSubdir(self: *Store, name: []const u8) !Io.Dir {
     return self.root.openDir(self.io, name, .{ .iterate = true });
+}
+
+/// A store in a fresh temporary directory, for tests. Closing `tmp`
+/// closes the store.
+pub fn openTesting(tmp: *const std.testing.TmpDir) !Store {
+    return openDir(std.testing.io, tmp.dir, .{
+        .text_bytes = 64 * 1024,
+        .image_bytes = 64 * 1024,
+        .video_bytes = 64 * 1024,
+        .media_total_bytes = 1024 * 1024,
+        .history_keep = 4,
+    });
 }

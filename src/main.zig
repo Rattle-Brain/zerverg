@@ -210,6 +210,9 @@ test {
     _ = @import("http/errors.zig");
     _ = @import("store/names.zig");
     _ = @import("store/site_state.zig");
+    _ = @import("store/posts.zig");
+    _ = @import("store/media.zig");
+    _ = @import("store/entries.zig");
     _ = @import("content/meta.zig");
     _ = @import("auth/password.zig");
     _ = @import("auth/Sessions.zig");

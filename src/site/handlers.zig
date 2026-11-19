@@ -3,6 +3,7 @@
 const std = @import("std");
 
 const Context = @import("../Context.zig");
+const Request = @import("../http/Request.zig");
 const Response = @import("../http/Response.zig");
 const media = @import("../store/media.zig");
 const library = @import("../store/library.zig");
@@ -60,9 +61,11 @@ pub fn snippet(ctx: *Context) !Response {
     };
 }
 
-/// Streams a media file; never loaded into memory whole.
+/// Streams a media file, site-wide (`/media/<name>`) or an entry's
+/// own (`/media/<posts|pages>/<slug>/<name>`); never loaded into
+/// memory whole.
 pub fn mediaFile(ctx: *Context) !Response {
-    const opened = try media.open(ctx.app.store, ctx.request.param("name"));
+    const opened = try media.open(ctx.app.store, try mediaPlace(ctx.request));
     return .{
         .content_type = opened.content_type,
         .file = opened.file,
@@ -71,6 +74,14 @@ pub fn mediaFile(ctx: *Context) !Response {
         // Neutralises scripts embedded in SVGs opened directly.
         .csp = "sandbox; default-src 'none'; style-src 'unsafe-inline'",
     };
+}
+
+fn mediaPlace(request: *const Request) !media.Place {
+    return media.placeOf(
+        request.optionalParam("folder"),
+        request.optionalParam("slug"),
+        request.param("name"),
+    );
 }
 
 fn contains(haystack: []const []const u8, needle: []const u8) bool {

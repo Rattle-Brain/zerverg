@@ -67,9 +67,26 @@ factory password is active, every endpoint except the
     <tr><td>PUT</td><td>/posts/:slug</td><td>HTML; create or replace</td></tr>
     <tr><td>DELETE</td><td>/posts/:slug</td><td></td></tr>
 
-    <tr><td>GET</td><td>/media</td><td>list with sizes</td></tr>
-    <tr><td>PUT</td><td>/media/:file</td><td>raw bytes</td></tr>
+    <tr><td>GET</td><td>/drafts</td><td>unpublished entries</td></tr>
+    <tr><td>GET</td><td>/drafts/:slug</td><td>raw HTML</td></tr>
+    <tr><td>PUT</td><td>/drafts/:slug</td><td>HTML; never served</td></tr>
+    <tr><td>DELETE</td><td>/drafts/:slug</td><td>discard</td></tr>
+    <tr><td>POST</td><td>/drafts/:slug/publish</td><td>replace the live
+      entry with the draft</td></tr>
+    <tr><td>POST</td><td>/entries/:slug/rename</td><td><code>?to=new-slug</code>;
+      moves the published entry, its draft, its media folders and every
+      <code>media:</code> reference to them. 409 if the address is
+      taken</td></tr>
+
+    <tr><td>GET</td><td>/media</td><td>list with paths and sizes</td></tr>
+    <tr><td>PUT</td><td>/media/:file</td><td>raw bytes; site-wide</td></tr>
+    <tr><td>PUT</td><td>/media/:folder/:slug/:file</td><td>an entry's
+      own; <code>:folder</code> is <code>posts</code> or
+      <code>pages</code></td></tr>
     <tr><td>DELETE</td><td>/media/:file</td><td></td></tr>
+    <tr><td>DELETE</td><td>/media/:folder/:slug/:file</td><td></td></tr>
+    <tr><td>DELETE</td><td>/media/:folder/:slug</td><td>the whole
+      folder</td></tr>
 
     <tr><td>GET</td><td>/site</td><td>settings</td></tr>
     <tr><td>PUT</td><td>/site</td><td>JSON, see below</td></tr>
@@ -108,9 +125,19 @@ factory password is active, every endpoint except the
 <span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @light.css \
      http://localhost:7080/api/v1/styles/light
 
-# upload an image
+# save a draft, then publish it
+<span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @post.html \
+     http://localhost:7080/api/v1/drafts/hello-again
+<span class="prompt"></span>curl -u admin:secret -X POST \
+     http://localhost:7080/api/v1/drafts/hello-again/publish
+
+# give a post a new address
+<span class="prompt"></span>curl -u admin:secret -X POST \
+     "http://localhost:7080/api/v1/entries/hello-again/rename?to=hello-world"
+
+# upload an image for one post (media:posts/hello-again/cat.png)
 <span class="prompt"></span>curl -u admin:secret -X PUT --data-binary @cat.png \
-     http://localhost:7080/api/v1/media/cat.png
+     http://localhost:7080/api/v1/media/posts/hello-again/cat.png
 
 # undo the last style change
 <span class="prompt"></span>curl -u admin:secret -X POST \

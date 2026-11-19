@@ -181,7 +181,9 @@ dark setting; the ☀ / ☾ button in the top bar overrides it.
 
 - **Write**: title, date, tags and text in one place, Markdown or HTML,
   with a live preview rendered through the real layout and stylesheet.
-  Drop or paste images straight into the text.
+  Save a draft and come back later, publish when it's ready. Drop or
+  paste images straight into the text; they go in the entry's own
+  media folder.
 - **Themes**: four starters, previewed on your own content before you
   switch: *Blog* (the default), *Magazine*, *Landing / shop* and
   *Newsletter*. A theme is just a layout plus a stylesheet with the
@@ -248,7 +250,10 @@ request ─► layout (xml) ─► <main/> ◄─ entry (html|md) ◄─ <zv-ent
 ├── styles/<name>/<version>.css  + HEAD
 ├── snippets/<name>/<version>.js + HEAD
 ├── posts/<slug>.html | <slug>.md          posts and pages
-├── media/<file>                           images, video
+├── drafts/<slug>.html | <slug>.md         unpublished, never served
+├── media/<file>                           site-wide images, video
+├── media/posts/<slug>/<file>              one post's own
+├── media/pages/<slug>/<file>              one page's own
 ├── site.json                              title, active layout/style/snippets
 └── auth.json                              console-managed password (0600)
 ```
@@ -295,7 +300,7 @@ description: One line for cards and search engines.
 image: media:cover.jpg
 ---
 
-Hi. ![a cat](media:cat.png)
+Hi. ![a cat](media:posts/hello-world/cat.png)
 
 ::: note
 Becomes <div class="note">: the stylesheet decides how it looks.
@@ -310,11 +315,13 @@ or in HTML (`hello-world.html`):
 <meta name="zerverg:kind" content="post">      <!-- post | page -->
 <meta name="zerverg:tags" content="zig,web">
 <body>
-  <p>Hi. <img src="media:cat.png" alt="a cat"></p>
+  <p>Hi. <img src="media:posts/hello-world/cat.png" alt="a cat"></p>
 </body>
 ```
 
-The page with slug `index` is the home page.
+The page with slug `index` is the home page. Media at the top of
+`media/` is site-wide (`media:logo.svg`); a post's or page's own lives
+in its folder (`media:posts/<slug>/cat.png`, `media:pages/<slug>/...`).
 
 ---
 
@@ -338,7 +345,12 @@ $ curl -u admin:pw -X POST \
 | `POST` | `/auth/login` · `/auth/logout` · `/auth/password` | console port; `GET /auth/session` is public |
 | `GET` `POST` | `/posts` | list · create (slug from meta) |
 | `GET` `PUT` `DELETE` | `/posts/:slug` | raw HTML |
-| `GET` · `PUT` `DELETE` | `/media` · `/media/:file` | list · raw bytes |
+| `GET` · `GET` `PUT` `DELETE` | `/drafts` · `/drafts/:slug` | unpublished, never served |
+| `POST` | `/drafts/:slug/publish` | replace the live entry with the draft |
+| `POST` | `/entries/:slug/rename?to=<slug>` | move an entry: published, draft, media and `media:` references |
+| `GET` · `PUT` `DELETE` | `/media` · `/media/:file` | list · raw bytes, site-wide |
+| `PUT` `DELETE` | `/media/{posts,pages}/:slug/:file` | an entry's own media |
+| `DELETE` | `/media/{posts,pages}/:slug` | an entry's whole media folder |
 | `GET` `PUT` | `/site` | title, active layout / style / snippets |
 | `GET` | `/{layouts,styles,snippets}` | list with current version |
 | `GET` `PUT` `DELETE` | `/{kind}/:name` | `?version=N` on `GET` |
@@ -425,7 +437,7 @@ The standards:
 
 - functions ≤ 60 lines, lines ≤ 80 columns, `zig fmt`
 - small modules with one clear job and descriptive names; follow the
-  existing layout (see [hacking](#-hacking))
+  existing layout (see [Hacking](#-Hacking))
 - `zig build test` passes, and new behaviour comes with tests
 - no new dependencies without discussing it first
 - the security defaults stay intact (origin split, CSP, validation on

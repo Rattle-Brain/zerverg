@@ -40,16 +40,18 @@
   ZV.isImage = (name) => /\.(png|jpe?g|gif|webp|avif|svg|ico)$/i.test(name);
   ZV.isVideo = (name) => /\.(mp4|webm|ogv)$/i.test(name);
 
-  /// Uploads one media file under a free name; resolves with it.
-  ZV.uploadMedia = async function (file, taken) {
-    let name = ZV.mediaName(file.name);
-    if (taken && taken.has(name)) {
-      const dot = name.lastIndexOf(".");
-      name = name.slice(0, dot) + "-" + Date.now().toString(36) + name.slice(dot);
+  /// Uploads one media file under a free name into `folder`: "" for
+  /// site-wide files, "posts/<slug>/" or "pages/<slug>/" for an
+  /// entry's own. Resolves with its path, as `media:` references use.
+  ZV.uploadMedia = async function (file, taken, folder) {
+    let path = (folder || "") + ZV.mediaName(file.name);
+    if (taken && taken.has(path)) {
+      const dot = path.lastIndexOf(".");
+      path = path.slice(0, dot) + "-" + Date.now().toString(36) + path.slice(dot);
     }
-    await api("PUT", "/media/" + name, file);
-    if (taken) taken.add(name);
-    return name;
+    await api("PUT", "/media/" + path, file);
+    if (taken) taken.add(path);
+    return path;
   };
 
   ZV.copy = async function (text, what) {
@@ -68,12 +70,15 @@
   const formatLabel = { markdown: "Markdown", html: "HTML" };
 
   ZV.views.posts = async function postsView() {
-    let entries;
+    let published, drafts, media;
     try {
-      entries = await api("GET", "/posts");
+      [published, drafts, media] = await Promise.all(
+        ["/posts", "/drafts", "/media"].map((p) => api("GET", p)));
     } catch (err) {
       return ZV.failed(err);
     }
+    const entries = withDrafts(published, drafts);
+    const paths = media.map((m) => m.path);
     const listBox = el("div");
     const search = el("input", { type: "search", placeholder: "Search titles and tags",
       "aria-label": "Search posts" });
@@ -82,7 +87,7 @@
       kind = k;
       render();
     });
-    const render = () => listBox.replaceChildren(postList(entries, search.value, kind));
+    const render = () => listBox.replaceChildren(postList(entries, paths, search.value, kind));
     search.addEventListener("input", render);
     render();
     ZV.show(ZV.page({
@@ -92,8 +97,27 @@
         ZV.button("Upload files", () => uploadEntries(entries)),
         ZV.link("New post", "#/write", "primary"),
       ],
-    }, [el("div", { class: "toolbar" }, [search, kinds]), listBox]));
+    }, [draftBanner(drafts), el("div", { class: "toolbar" }, [search, kinds]), listBox]));
   };
+
+  /// One row per slug: drafts of new entries first, then published
+  /// entries, each marked when a draft of it is pending.
+  function withDrafts(published, drafts) {
+    const live = new Set(published.map((e) => e.slug));
+    const pending = new Set(drafts.map((d) => d.slug));
+    return drafts.filter((d) => !live.has(d.slug))
+      .map((d) => Object.assign({ live: false, draft: true }, d))
+      .concat(published.map((e) => Object.assign({ live: true, draft: pending.has(e.slug) }, e)));
+  }
+
+  function draftBanner(drafts) {
+    if (!drafts.length) return null;
+    const count = drafts.length === 1 ? "1 unpublished draft." : drafts.length + " unpublished drafts.";
+    return el("div", { class: "callout draft", role: "status" }, [
+      el("strong", { text: count }),
+      el("span", { text: "Drafts aren't on the site until you publish them; they're marked below." }),
+    ]);
+  }
 
   function segmented(values, labels, onPick) {
     const box = el("div", { class: "segmented", role: "group" });
@@ -109,23 +133,23 @@
     return box;
   }
 
-  function postList(entries, query, kind) {
+  function postList(entries, paths, query, kind) {
     const q = query.trim().toLowerCase();
     const shown = entries.filter((e) => (kind === "all" || e.meta.kind === kind) &&
       (!q || (e.meta.title + " " + e.slug + " " + e.meta.tags).toLowerCase().includes(q)));
     if (!entries.length) {
       return el("div", { class: "card" }, ZV.empty("No posts yet",
-        "Write your first post; it appears on the site as soon as you save it.",
+        "Write your first post; it appears on the site as soon as you publish it.",
         ZV.link("Write a post", "#/write", "primary")));
     }
     if (!shown.length) {
       return el("div", { class: "card" }, ZV.empty("Nothing matches",
         "Try a different search or filter."));
     }
-    return el("ul", { class: "card list" }, shown.map(postRow));
+    return el("ul", { class: "card list" }, shown.map((e) => postRow(e, paths)));
   }
 
-  function postRow(entry) {
+  function postRow(entry, paths) {
     const meta = entry.meta;
     const editHref = "#/write/" + encodeURIComponent(entry.slug);
     const sub = [
@@ -133,22 +157,69 @@
       meta.date ? el("span", { text: meta.date }) : null,
       meta.tags ? el("span", { text: meta.tags }) : null,
     ];
+    const name = "\"" + (meta.title || entry.slug) + "\"";
     return el("li", { class: "list-row" }, [
       el("div", { class: "main" }, [
         el("a", { class: "title", href: editHref, text: meta.title || entry.slug }),
         el("div", { class: "sub" }, sub),
       ]),
+      entry.draft ? el("span", { class: "badge draft",
+        text: entry.live ? "unpublished changes" : "draft" }) : null,
       el("span", { class: meta.kind === "page" ? "badge accent" : "badge", text: meta.kind }),
       el("span", { class: "badge", text: formatLabel[entry.format] || entry.format }),
       el("div", { class: "actions" }, [
         ZV.link("Edit", editHref, "small"),
-        ZV.link("View ↗", ZV.siteUrl(entry.slug), "small ghost",
-          { target: "_blank", rel: "noopener" }),
-        ZV.button("Delete", () => ZV.remove("\"" + (meta.title || entry.slug) + "\"",
-          "/posts/" + entry.slug, ZV.views.posts), "small ghost danger"),
+        entry.live ? ZV.link("View ↗", ZV.siteUrl(entry.slug), "small ghost",
+          { target: "_blank", rel: "noopener" }) : null,
+        ZV.button("Delete", () => ZV.removeEntry({
+          what: entry.live ? name : "draft " + name,
+          path: (entry.live ? "/posts/" : "/drafts/") + entry.slug,
+          // A pending draft still uses the media; only offer it with the last version.
+          folders: entry.live && entry.draft ? [] : ZV.mediaFolders(paths, entry.slug),
+          then: ZV.views.posts,
+        }), "small ghost danger"),
       ]),
     ]);
   }
+
+  /// The media folders of entry `slug`, "posts/<slug>/" or
+  /// "pages/<slug>/", with how many files each holds.
+  ZV.mediaFolders = function (paths, slug) {
+    const counts = new Map();
+    for (const path of paths) {
+      const cut = path.lastIndexOf("/");
+      const folder = path.slice(0, cut + 1);
+      if (folder !== "posts/" + slug + "/" && folder !== "pages/" + slug + "/") continue;
+      counts.set(folder, (counts.get(folder) || 0) + 1);
+    }
+    return [...counts].map(([folder, files]) => ({ folder, files }));
+  };
+
+  /// Deletes an entry or a draft. With `folders`, the entry's media,
+  /// offers to delete those too; they stay unless asked.
+  ZV.removeEntry = async function ({ what, path, folders, then }) {
+    if (!folders.length) return ZV.remove(what, path, then);
+    const files = folders.reduce((n, f) => n + f.files, 0);
+    const withMedia = await ZV.confirmOption({
+      title: "Delete " + what + "?",
+      message: "This can't be undone.",
+      option: "Also delete its media: " + files + (files === 1 ? " file in " : " files in ") +
+        folders.map((f) => f.folder).join(" and "),
+      action: "Delete",
+      danger: true,
+    });
+    if (withMedia === null) return;
+    try {
+      await api("DELETE", path);
+      if (withMedia) {
+        for (const f of folders) await api("DELETE", "/media/" + f.folder.slice(0, -1));
+      }
+      ZV.toast("Deleted " + what + (withMedia ? " and its media." : "."));
+    } catch (err) {
+      ZV.failed(err);
+    }
+    then();
+  };
 
   async function uploadEntries(entries) {
     const files = await ZV.pickFiles(".html,.htm,.md,.markdown,text/html,text/markdown", true);
@@ -322,51 +393,125 @@
   const mediaAccept = ".png,.jpg,.jpeg,.gif,.webp,.avif,.svg,.ico,.mp4,.webm,.ogv";
 
   ZV.views.media = async function mediaView() {
-    let items;
+    let items, published, drafts;
     try {
-      items = await api("GET", "/media");
+      [items, published, drafts] = await Promise.all(
+        ["/media", "/posts", "/drafts"].map((p) => api("GET", p)));
     } catch (err) {
       return ZV.failed(err);
     }
-    const taken = new Set(items.map((i) => i.name));
+    // Published titles win over a draft's working title.
+    const titles = new Map(drafts.concat(published).map((e) => [e.slug, e.meta.title || e.slug]));
+    const taken = new Set(items.map((i) => i.path));
     const upload = async (files) => {
       for (const file of files) {
         try {
-          const name = await ZV.uploadMedia(file, taken);
-          ZV.toast("Uploaded \"" + name + "\".");
+          const path = await ZV.uploadMedia(file, taken, "");
+          ZV.toast("Uploaded \"" + path + "\".");
         } catch (err) {
           ZV.toast(file.name + ": " + err.message, "error");
         }
       }
       ZV.views.media();
     };
-    const grid = items.length ? el("div", { class: "media-grid" }, items.map(mediaCard))
+    const groups = items.length ? mediaSections(items, titles)
       : el("div", { class: "card" }, ZV.empty("No media yet",
         "Uploaded images and videos show up here."));
     ZV.show(ZV.page({
       title: "Media",
-      lead: ["Images and videos for your posts. In Markdown write ",
-        el("code", { text: "![description](media:photo.jpg)" }),
-        "; the Write view's Image button does it for you."],
-    }, [ZV.dropzone("Upload images or videos", mediaAccept, upload), grid]));
+      lead: ["Images and videos. Files uploaded here are site-wide, for logos and " +
+        "banners; each post or page keeps its own in a folder, filled by the Write " +
+        "view's Image button. In Markdown write ",
+        el("code", { text: "![description](media:photo.jpg)" }), "."],
+    }, [ZV.dropzone("Upload site-wide images or videos", mediaAccept, upload)].concat(groups)));
   };
 
+  /// Site-wide files, then a collapsible section each for posts and
+  /// pages, holding one collapsible folder per entry.
+  function mediaSections(items, titles) {
+    const site = [];
+    const folders = { posts: new Map(), pages: new Map() };
+    for (const item of items) {
+      const [dir, slug] = item.path.split("/");
+      if (!folders[dir] || !slug) {
+        site.push(item);
+        continue;
+      }
+      if (!folders[dir].has(slug)) folders[dir].set(slug, []);
+      folders[dir].get(slug).push(item);
+    }
+    return [
+      site.length ? el("section", { class: "media-group" }, [
+        el("h2", { text: "Site-wide" }), mediaGrid(site)]) : null,
+      kindSection("posts", "Posts", folders.posts, titles),
+      kindSection("pages", "Pages", folders.pages, titles),
+    ];
+  }
+
+  /// Which sections are open, kept while the console runs, so a
+  /// re-render after an upload or delete doesn't fold everything.
+  const openFolds = new Set(["posts", "pages"]);
+
+  function fold(key, summary, body) {
+    const box = el("details", { class: "fold", open: openFolds.has(key) },
+      [el("summary", {}, summary)].concat(body));
+    box.addEventListener("toggle", () => {
+      if (box.open) openFolds.add(key);
+      else openFolds.delete(key);
+    });
+    return box;
+  }
+
+  const countOf = (n, noun) => n + " " + noun + (n === 1 ? "" : "s");
+
+  function kindSection(dir, label, entries, titles) {
+    if (!entries.size) return null;
+    const files = [...entries.values()].reduce((n, list) => n + list.length, 0);
+    return fold(dir, [
+      el("h2", { text: label }),
+      el("span", { class: "hint", text: countOf(entries.size, label.slice(0, -1).toLowerCase()) +
+        ", " + countOf(files, "file") }),
+    ], [...entries].map(([slug, list]) => entryFolder(dir, slug, list, titles)));
+  }
+
+  function entryFolder(dir, slug, list, titles) {
+    const folder = dir + "/" + slug;
+    const title = titles.get(slug);
+    // Inside a summary a click would also fold the section.
+    const remove = ZV.button("Delete folder", (e) => {
+      e.preventDefault();
+      ZV.remove("the folder \"" + folder + "/\" and its " + countOf(list.length, "file"),
+        "/media/" + folder, ZV.views.media);
+    }, "small ghost danger");
+    return fold(folder, [
+      el("strong", { text: title || slug }),
+      el("span", { class: "mono hint", text: folder + "/" }),
+      title ? null : el("span", { class: "badge", text: "no entry" }),
+      el("span", { class: "badge", text: countOf(list.length, "file") }),
+      remove,
+    ], [mediaGrid(list)]);
+  }
+
+  function mediaGrid(items) {
+    return el("div", { class: "media-grid" }, items.map(mediaCard));
+  }
+
   function mediaCard(item) {
-    const src = "/media/" + item.name;
+    const src = "/media/" + item.path;
     const preview = ZV.isImage(item.name) ? el("img", { src, alt: "", loading: "lazy" })
       : ZV.isVideo(item.name) ? el("video", { src, muted: true, preload: "metadata" })
         : el("span", { text: item.content_type });
     return el("div", { class: "card media-card" }, [
       el("div", { class: "thumb" }, preview),
       el("div", { class: "meta" }, [
-        el("div", { class: "name", title: item.name, text: item.name }),
+        el("div", { class: "name", title: item.path, text: item.name }),
         el("div", { class: "hint", text: ZV.formatSize(item.size) }),
       ]),
       el("div", { class: "actions" }, [
-        ZV.button("Copy", () => ZV.copy("media:" + item.name, "reference"), "small ghost",
-          { title: "Copy media:" + item.name }),
+        ZV.button("Copy", () => ZV.copy("media:" + item.path, "reference"), "small ghost",
+          { title: "Copy media:" + item.path }),
         ZV.link("Open", src, "small ghost", { target: "_blank", rel: "noopener" }),
-        ZV.button("Delete", () => ZV.remove("\"" + item.name + "\"", "/media/" + item.name,
+        ZV.button("Delete", () => ZV.remove("\"" + item.path + "\"", src,
           ZV.views.media), "small ghost danger"),
       ]),
     ]);

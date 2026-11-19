@@ -120,6 +120,7 @@ const friendly = {
   InvalidKind: "The type must be \"post\" or \"page\".",
   InvalidFormat: "The format must be Markdown or HTML.",
   MissingSlug: "Give the entry a name (slug) first.",
+  NameTaken: "Another entry, draft or media folder already uses that address.",
   InvalidContent: "The file must be UTF-8 text.",
   TooLarge: "That is larger than the server allows.",
   ContentMismatch: "The file's contents don't match its extension.",
@@ -230,22 +231,38 @@ function openDialog(build) {
 }
 
 /// Resolves true when confirmed. `danger` styles the action red.
-ZV.confirm = function ({ title, message, action, danger }) {
-  return openDialog((done) => {
-    const ok = el("button", {
-      type: "submit", class: "btn " + (danger ? "danger solid" : "primary"),
-    }, action || "Continue");
-    return el("form", { method: "dialog", on: { submit: (e) => {
-      e.preventDefault(); done(true);
-    } } }, [
-      el("h2", { text: title }),
-      message ? el("p", { text: message }) : null,
-      el("div", { class: "actions" }, [
-        ZV.button("Cancel", () => done(false), "", { autofocus: true }), ok,
-      ]),
-    ]);
-  }).then(Boolean);
+ZV.confirm = function (question) {
+  return openDialog((done) => confirmForm(question, done, null, () => true))
+    .then(Boolean);
 };
+
+/// Like confirm, with an `option` switch, off at first. Resolves
+/// null when cancelled, else whether the option was switched on.
+ZV.confirmOption = function (question) {
+  return openDialog((done) => {
+    const box = el("input", { type: "checkbox" });
+    const option = el("label", { class: "switch" }, [
+      box, el("span", { text: question.option }),
+    ]);
+    return confirmForm(question, done, option, () => box.checked);
+  });
+};
+
+function confirmForm({ title, message, action, danger }, done, extra, result) {
+  const ok = el("button", {
+    type: "submit", class: "btn " + (danger ? "danger solid" : "primary"),
+  }, action || "Continue");
+  return el("form", { method: "dialog", on: { submit: (e) => {
+    e.preventDefault(); done(result());
+  } } }, [
+    el("h2", { text: title }),
+    message ? el("p", { text: message }) : null,
+    extra,
+    el("div", { class: "actions" }, [
+      ZV.button("Cancel", () => done(null), "", { autofocus: true }), ok,
+    ]),
+  ]);
+}
 
 /// Asks for one value; resolves null when cancelled. `check(value)`
 /// returns an error message or "".
